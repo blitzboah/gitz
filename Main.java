@@ -3,14 +3,14 @@ public class Main {
         String command = "";
         String flag = "";
 
+        if(args.length == 0){
+            System.out.println("try using init if its not a gitz dir");
+        }
         GitRepository gitRepository = new GitRepository();
 
-        try {
-            command = args[0];
-            flag = args[1];
-        }catch (IndexOutOfBoundsException e){
-            e.getMessage();
-        }
+        command = args[0];
+        //flag = args[1];
+
 
         switch (command){
             case "init" -> {

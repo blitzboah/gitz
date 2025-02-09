@@ -1,3 +1,4 @@
+import java.io.FileWriter;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -17,13 +18,15 @@ public class GitRepository {
         else {
 
             if(gitdir.toFile().mkdir()) {
+                repoDir(new String[]{"branches"}, true);
+                repoDir(new String[]{"objects"}, true);
+                repoDir(new String[]{"refs", "tags"}, true);
+                repoDir(new String[]{"refs", "heads"},true);
+
+                writeFile(new String[]{"HEADS"}, "ref: refs/heads/master\n"); //master as linus intended
+                writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
 
                 System.out.println("gitz repo initialized");
-
-                assert repoDir(new String[]{"branches"}, true) != null;
-                assert repoDir(new String[]{"objects"}, true) != null;
-                assert repoDir(new String[]{"refs", "tags"}, true) != null;
-                assert repoDir(new String[]{"refs", "heads"}, true) != null;
             }
 
             else {
@@ -32,6 +35,7 @@ public class GitRepository {
         }
     }
 
+    // computes the path
     Path repoPath(String... path){
         return gitdir.resolve(Paths.get("", path));
     }
@@ -53,10 +57,18 @@ public class GitRepository {
         }
 
         if (mkdir){
-            resolevedPath.toFile().mkdirs();
-            return resolevedPath;
+            if(resolevedPath.toFile().mkdirs())
+                return resolevedPath;
         }
-        else
-            return null;
+        return null;
+    }
+
+
+
+    void writeFile(String[] path, String content) throws Exception {
+        Path filePath = repoFile(path, false);
+        try (FileWriter fw = new FileWriter(filePath.toFile())){
+            fw.write(content);
+        }
     }
 }
