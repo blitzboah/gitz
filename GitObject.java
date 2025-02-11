@@ -14,11 +14,14 @@ public abstract class GitObject {
         }
     }
 
-    public abstract byte[] serialize(byte[] repo);
+    public abstract byte[] serialize();
 
     public abstract void deserialize(byte[] data) throws Exception;
 
     public void init(){
         //do nothing br
     }
+
+    public abstract String getFmt();
+
 }
