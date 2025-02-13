@@ -1,4 +1,9 @@
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -6,26 +11,39 @@ public class Main {
         String flag = "";
 
         if(args.length == 0){
-            System.out.println("try using init if its not a gitz dir");
+            System.out.println("try using <gitz init> if its not a gitz dir");
         }
         GitRepository gitRepository = new GitRepository();
 
         command = args[0];
-        //flag = args[1];
-
 
         switch (command){
             case "init" -> {
                 gitRepository.gitInit();
             }
             case "cat-file" -> {
-                String[] newArgs = new String[args.length-1];
-                System.arraycopy(args, 0, newArgs, 1, newArgs.length);
-                cmdCatFile(newArgs);
-                System.out.println("some info will get printed");
+                String[] catFileArgs = argsMaker(args);
+                cmdCatFile(catFileArgs);
+            }
+            case "hash-object" -> {
+                String[] hashArgs = argsMaker(args);
+                if(hashArgs.length < 3){
+                    System.out.println("usage: hash-object <-w> <-t TAG> <FILE>\n"+
+                             "<-w> {write flag}\n"+
+                             "<-t TYPE> {-t tag flag TYPE -> specify the type choices"+
+                             "=['blob', 'commit', 'tag', 'tree'] default is blob"+
+                             "<FILE> read object from file");
+                }
+                cmdHashObject(hashArgs);
             }
             default -> System.out.println("type correctly lil bro");
         }
+    }
+
+    public static String[] argsMaker(String[] args){
+        String[] newArgs = new String[args.length-1];
+        System.arraycopy(args, 0, newArgs, 1, newArgs.length);
+        return newArgs;
     }
 
     public static void cmdCatFile(String[] args) throws Exception{
@@ -36,5 +54,33 @@ public class Main {
 
         String obj = args[0];
         String type = args[1];
+
+        Path repo = GitRepository.repoFind(".", true);
+    }
+
+    public static void catFile(Path path, String obj, String type){
+        String sha = obj.length() == 40 ? obj : GitRepository.objectFind(path, obj, type);
+
+        GitObject object = GitRepository.objectRead(sha);
+
+        if(object != null){
+            System.out.println(Arrays.toString(object.serialize()));
+        }
+        else {
+            System.out.println("object not found");
+        }
+    }
+
+    public static void cmdHashObject(String[] args) throws Exception {
+        boolean writeFlag;
+        writeFlag = args[0].equals("-w");
+        String typeFlag = args[1];
+        String type = args[2];
+        String filePath = args[3];
+        Path repo = GitRepository.repoFind(".", true);
+
+        String sha = GitRepository.objectHash(filePath, type, repo);
+
+        System.out.println(sha);
     }
 }

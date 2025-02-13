@@ -1,5 +1,6 @@
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
@@ -9,15 +10,18 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
 public class GitRepository {
-    private final Path worktree;
-    private final Path gitdir;
+    private static Path gitdir = null;
 
     public GitRepository() {
-        this.worktree = Paths.get(System.getProperty("user.dir"));
+        Path worktree = Paths.get(System.getProperty("user.dir"));
         this.gitdir = worktree.resolve(".gitz");
     }
 
-    public GitObject objectRead(String sha){
+    public static String objectFind(Path path, String name, String fmt){
+        return name;
+    }
+
+    public static GitObject objectRead(String sha){
         Path path = repoPath("objects", sha.substring(0,2), sha.substring(2));
         File file = path.toFile();
         if(!file.exists()){
@@ -47,7 +51,7 @@ public class GitRepository {
 
             Class<? extends GitObject> c = null;
             switch (fmt){
-                // case "commit" -> c = GitCommit.class;
+                //case "commit" -> c = GitCommit.class;
                 //case "tree" -> c = GitTree.class;
                 //case "tag" -> c = GitTag.class;
                 case "blob" -> c = GitBlob.class;
@@ -66,7 +70,32 @@ public class GitRepository {
         return null;
     }
 
-    public String objectWrite(GitObject obj) throws IOException, NoSuchAlgorithmException {
+    public static String objectHash(String filePath, String type, Path repo) throws Exception {
+        byte[] data = Files.readAllBytes(Paths.get(filePath));
+
+        GitObject obj = new GitBlob();
+        switch (type) {
+            //case "commit" ->
+            //    obj = new GitCommit(data);
+            //case "tree" ->
+            //    obj = new GitTree(data);
+            //case "tag" ->
+            //    obj = new GitTag(data);
+            case "blob" ->
+                obj = new GitBlob(data);
+            default ->
+                System.out.println("unknown type");
+        }
+
+        if(repo != null){
+            return objectWrite(obj);
+        }
+        else{
+            return computeSHA(obj.serialize());
+        }
+    }
+
+    public static String objectWrite(GitObject obj) throws IOException, NoSuchAlgorithmException {
         byte[] data = obj.serialize();
 
         String header = obj.getFmt() + " " + data.length + "\0";
@@ -94,7 +123,7 @@ public class GitRepository {
         return sha;
     }
 
-    private String computeSHA(byte[] data) throws NoSuchAlgorithmException {
+    private static String computeSHA(byte[] data) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         byte[] hashBytes = digest.digest(data);
         StringBuilder hexString = new StringBuilder();
@@ -110,11 +139,11 @@ public class GitRepository {
         return hexString.toString();
     }
 
-    private int indexOf(byte[] array, byte target) {
+    private static int indexOf(byte[] array, byte target) {
         return indexOf(array, target, 0);
     }
 
-    private int indexOf(byte[] array, byte target, int start) {
+    private static int indexOf(byte[] array, byte target, int start) {
         for (int i = start; i < array.length; i++) {
             if (array[i] == target) {
                 return i;
@@ -149,7 +178,7 @@ public class GitRepository {
     }
 
     // computes the path
-    public Path repoPath(String... path){
+    public static Path repoPath(String... path){
         return gitdir.resolve(Paths.get("", path));
     }
 
@@ -195,7 +224,7 @@ public class GitRepository {
         return config;
     }
 
-    public Path repoFind(String path, boolean required){
+    public static Path repoFind(String path, boolean required){
         File dir = new File(path).getAbsoluteFile();
 
         if(new File(dir, ".gitz").isDirectory()){
@@ -213,4 +242,6 @@ public class GitRepository {
 
         return repoFind(parent.getAbsolutePath(), required);
     }
+
+
 }
