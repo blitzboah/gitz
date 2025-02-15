@@ -25,6 +25,7 @@ public class GitRepository {
         Path path = repoPath("objects", sha.substring(0,2), sha.substring(2));
         File file = path.toFile();
         if(!file.exists()){
+            System.out.println("file doesn't exist lil bro");
             return null;
         }
 
@@ -61,13 +62,14 @@ public class GitRepository {
             byte[] data = new byte[size];
             System.arraycopy(raw, y+1, data, 0, size);
             assert c != null;
+            System.out.println("obj returned");
             return c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
         }
         catch (Exception e){
+            e.printStackTrace();
             e.getMessage();
+            return null;
         }
-
-        return null;
     }
 
     public static String objectHash(String filePath, String type, Path repo) throws Exception {
@@ -117,6 +119,8 @@ public class GitRepository {
             try (FileOutputStream fos = new FileOutputStream(path.toFile())){
                 DeflaterOutputStream dos = new DeflaterOutputStream(fos);
                 dos.write(result);
+                dos.finish();
+                dos.flush();
             }
         }
 
@@ -242,6 +246,4 @@ public class GitRepository {
 
         return repoFind(parent.getAbsolutePath(), required);
     }
-
-
 }
