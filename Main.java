@@ -8,11 +8,12 @@ import java.util.Arrays;
 public class Main {
     public static void main(String[] args) throws Exception {
         String command = "";
-        String flag = "";
 
         if(args.length == 0){
             System.out.println("try using <gitz init> if its not a gitz dir");
+            return;
         }
+
         GitRepository gitRepository = new GitRepository();
 
         try {
