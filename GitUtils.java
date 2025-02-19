@@ -41,7 +41,7 @@ public class GitUtils {
         return kvlmParse(raw, end+1, dct);
     }
 
-    private static int indexOf(byte[] arr, byte target, int s){
+    public static int indexOf(byte[] arr, byte target, int s){
         for (int i = s; i < arr.length; i++) {
             if(arr[i] == target){
                 return i;
