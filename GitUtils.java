@@ -1,8 +1,13 @@
+import javax.print.attribute.standard.NumberOfInterveningJobs;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 public class GitUtils {
 
@@ -86,5 +91,82 @@ public class GitUtils {
             }
         }
         return output.toByteArray();
+    }
+
+    public static void verifyTargetDirectory(File targetDir) throws Exception {
+        if(targetDir.exists()){
+            if(!targetDir.isDirectory()){
+                throw new Exception("not a directory: " + targetDir.getPath());
+            }
+            if(targetDir.list() != null && targetDir.list().length > 0){
+                throw new Exception("not empty: " + targetDir.getPath());
+            }
+        }
+        else{
+            if(!targetDir.mkdirs()){
+                throw new Exception("could not create directory: " + targetDir.getPath());
+            }
+        }
+    }
+
+    public static String refResolve(Path repo, Path ref) throws IOException {
+        Path path = repo.resolve(ref);
+
+        if(!Files.isRegularFile(path)) return null;
+
+        String data = Files.readString(path).trim();
+
+        if(data.startsWith("ref: ")){
+            return refResolve(path, repo.resolve(data.substring(5)));
+        }
+        else{
+            return data;
+        }
+    }
+
+    public static Map<String, Object> refList(Path repo, Path path) throws IOException {
+        if(path == null){
+            path = repo.resolve("refs");
+        }
+
+        Map<String, Object> ret = new TreeMap<>(); // using treemap to maintain order unlike hashmap can't maintain order type shi
+
+        File[] files = path.toFile().listFiles();
+        if(files == null) return ret;
+
+        for (File f: files){
+            if(f.isDirectory()){
+                ret.put(f.getName(), refList(repo, f.toPath()));
+            }
+            else{
+                ret.put(f.getName(), refResolve(repo, f.toPath()));
+            }
+        }
+
+        return ret;
+    }
+
+    public static void showRef(Path repo, Map<String, Object> refs, boolean withHash, String prefix){
+        if(!prefix.isEmpty()){
+            prefix = prefix + "/";
+        }
+
+        for(Map.Entry<String, Object> entry: refs.entrySet()){
+            String key = entry.getKey();
+            Object val = entry.getValue();
+
+            if(val instanceof String){
+                if(withHash){
+                    System.out.println(val+" "+prefix + key);
+                }
+                else{
+                    System.out.println(prefix + key);
+                }
+            }
+            else if(val instanceof Map){
+                // recursive call for nested references 
+                showRef(repo, (Map<String, Object>) val, withHash, prefix+key);
+            }
+        }
     }
 }

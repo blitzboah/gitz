@@ -1,9 +1,12 @@
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Map;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -91,4 +94,66 @@ public class Main {
 
         System.out.println(sha);
     }
+
+    public static void cmdLsTree(String[] args){
+        Path repo = GitRepository.repoFind(".", true);
+        String treeRef = args[0];
+        boolean recursive = args.length > 1 && args[1].equals("-r");
+    }
+
+    public static void cmdCheckout(String[] args) throws Exception {
+        String commitHash = args[0];
+        String targetPath = args[1];
+
+        Path repo = GitRepository.repoFind(".", true);
+
+        String objSha = GitRepository.objectFind(repo, commitHash, null);
+        GitObject obj = GitRepository.objectRead(objSha);
+
+        if(!(obj instanceof GitCommit)){
+            GitCommit commit = (GitCommit) obj;
+
+            byte[] treeHash = commit.getKvlm().get("tree".getBytes(StandardCharsets.UTF_8));
+            if(treeHash == null){
+                throw new Exception("commit has not tree");
+            }
+
+            obj = GitRepository.objectRead(new String(treeHash, StandardCharsets.UTF_8));
+        }
+
+        File targetDir = new File(targetPath);
+        GitUtils.verifyTargetDirectory(targetDir);
+
+        String realPath = targetDir.getCanonicalPath();
+        treeCheckout(repo, (GitTree) obj, Path.of(realPath));
+    }
+
+    public static void treeCheckout(Path repo, GitTree tree, Path path) throws Exception{
+        for(GitTreeLeaf item : tree.getItems()){
+            GitObject obj = GitRepository.objectRead(item.getSha());
+
+            if(obj == null){
+                throw new Exception("could not read object "+ item.getSha());
+            }
+
+            Path dest = path.resolve(item.getPath().toString());
+
+            if(obj instanceof GitTree){
+                Files.createDirectory(dest);
+                treeCheckout(repo, (GitTree) obj, dest);
+            }
+            else if(obj instanceof  GitBlob){
+                try(FileOutputStream fos = new FileOutputStream(dest.toFile())){
+                    fos.write(obj.serialize());
+                }
+            }
+        }
+    }
+
+    public static void cmdShowRef() throws IOException {
+        Path repo = GitRepository.repoFind(".", true);
+        Map<String, Object> refs = GitUtils.refList(repo, null);
+        showRef(repo, refs, true, "refs");
+    }
+
 }

@@ -171,8 +171,46 @@ public class GitTreeLeaf extends GitObject {
         }
     }
 
-    public static void cmdLsTree(String smth){
-        // i;m tired bos
+    public static void lsTree(Path repo, String ref, boolean recrusive, String prefix) throws Exception {
+        String sha = GitRepository.objectFind(repo, ref, "tree");
+
+        GitObject obj = GitRepository.objectRead(sha);
+        if(!(obj instanceof GitTree)){
+            System.out.println("not a tree object");
+            return;
+        }
+
+        List<GitTreeLeaf> items = ((GitTree) obj).getItems();
+
+        for (GitTreeLeaf item : items){
+            String type = determineType(item.getMode());
+
+            if(!recrusive || !type.equals("tree")){ // ts a leaf
+                String mode = padMode(new String(item.getMode(), StandardCharsets.UTF_8));
+                String path = Paths.get(prefix, item.getPath().toString()).toString();
+                System.out.printf("%s %s %s\t%s%n", mode, type, item.getSha(), path);
+            }
+            else { // ts branch, recurse
+                lsTree(repo, item.getSha(), true, Paths.get(prefix, item.getPath().toString()).toString());
+            }
+        }
+    }
+
+    private static String determineType(byte[] mode) throws Exception {
+        String modeStr = new String(mode, StandardCharsets.UTF_8);
+        String typePrefix = modeStr.length() == 5 ? modeStr.substring(0,1) : modeStr.substring(0,2);
+
+        return switch (typePrefix){
+            case "04" -> "tree"; // directory
+            case "10" -> "blob"; // regular file
+            case "12" -> "blob"; // symlink, blob contents is link target
+            case "16" -> "commit"; // submodule
+            default -> throw new Exception("invalid tree leaf mode");
+        };
+    }
+
+    private static String padMode(String mode){
+        return "0".repeat(6 - mode.length()) + mode;
     }
 
 }
