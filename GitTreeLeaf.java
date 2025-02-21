@@ -172,7 +172,7 @@ public class GitTreeLeaf extends GitObject {
     }
 
     public static void lsTree(Path repo, String ref, boolean recrusive, String prefix) throws Exception {
-        String sha = GitRepository.objectFind(repo, ref, "tree");
+        String sha = GitRepository.objectFind(repo, ref, "tree", true);
 
         GitObject obj = GitRepository.objectRead(sha);
         if(!(obj instanceof GitTree)){

@@ -164,7 +164,7 @@ public class GitUtils {
                 }
             }
             else if(val instanceof Map){
-                // recursive call for nested references 
+                // recursive call for nested references / dir
                 showRef(repo, (Map<String, Object>) val, withHash, prefix+key);
             }
         }

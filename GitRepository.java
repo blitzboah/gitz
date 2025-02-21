@@ -5,7 +5,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
@@ -17,8 +21,105 @@ public class GitRepository {
         this.gitdir = worktree.resolve(".gitz");
     }
 
-    public static String objectFind(Path path, String name, String fmt){
-        return name;
+    public static String objectFind(Path path, String name, String fmt, boolean follow) throws Exception {
+        List<String> sha = objectResolve(path, name);
+
+        if(sha.isEmpty()){
+            throw new Exception("no such reference "+name);
+        }
+
+        if(sha.size() > 1){
+            throw new Exception("ambiguous reference " + name + ": candidates are:\n -" + String.join("\n - ",sha));
+        }
+
+        String resolvedSha = sha.getFirst();
+
+        if(fmt == null) return resolvedSha;
+
+        while(true){
+            // to check type of obj
+            GitObject obj = objectRead(resolvedSha);
+            // not performant
+
+            if(obj == null) throw new Exception("obj not found");
+
+            if(obj.getFmt().equals(fmt)){
+                return resolvedSha;
+            }
+
+            if(!follow) return null;
+
+            if (obj.getFmt().equals("tag")) {
+                GitTag tag = (GitTag) obj;
+                Map<byte[], byte[]> kvlm = tag.getKvlm();
+                for (Map.Entry<byte[], byte[]> entry : kvlm.entrySet()) {
+                    if (entry.getKey() != null && new String(entry.getKey(), StandardCharsets.UTF_8).equals("object")) {
+                        resolvedSha = new String(entry.getValue(), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            } else if (obj.getFmt().equals("commit") && fmt.equals("tree")) {
+                GitCommit commit = (GitCommit) obj;
+                Map<byte[], byte[]> kvlm = commit.getKvlm();
+                for (Map.Entry<byte[], byte[]> entry : kvlm.entrySet()) {
+                    if (entry.getKey() != null && new String(entry.getKey(), StandardCharsets.UTF_8).equals("tree")) {
+                        resolvedSha = new String(entry.getValue(), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            } else {
+                return null;
+            }
+        }
+    }
+
+    public static List<String> objectResolve(Path repo, String name) throws IOException {
+        List<String> candidates = new ArrayList<>();
+        Pattern hashPattern = Pattern.compile("^[0-9A-Fa-f]{4,40}$");
+
+        // empty string? abort
+        if(name == null || name.trim().isEmpty()){
+            return candidates;
+        }
+
+        if(name.equals("HEAD")){
+            String headRef = GitUtils.refResolve(repo, Path.of("HEAD"));
+            if(headRef != null){
+                candidates.add(headRef);
+            }
+            return candidates;
+        }
+
+        if(hashPattern.matcher(name).matches()){
+            String lowerName = name.toLowerCase();
+            String prefix = name.substring(0,2);
+            Path path = repo.resolve(".gitz/objects"+prefix);
+
+            if(Files.exists(path)){
+                String rem = name.substring(2);
+                File[] files = path.toFile().listFiles();
+                if (files != null){
+                    for(File f: files){
+                        String fileName = f.getName();
+                        if(fileName.startsWith(rem)){
+                            candidates.add(prefix + fileName);
+                        }
+                    }
+                }
+            }
+        }
+
+        String asTag = GitUtils.refResolve(repo, Path.of("refs/tags"+name));
+        if(asTag != null){
+            candidates.add(asTag);
+        }
+
+        String asBranch = GitUtils.refResolve(repo, Path.of("refs/heads"+name));
+        if(asBranch != null){
+            candidates.add(asBranch);
+        }
+
+        return candidates;
     }
 
     public static GitObject objectRead(String sha){
@@ -52,9 +153,9 @@ public class GitRepository {
 
             Class<? extends GitObject> c = null;
             switch (fmt){
-                //case "commit" -> c = GitCommit.class;
-                //case "tree" -> c = GitTree.class;
-                //case "tag" -> c = GitTag.class;
+                case "commit" -> c = GitCommit.class;
+                case "tree" -> c = GitTree.class;
+                case "tag" -> c = GitTag.class;
                 case "blob" -> c = GitBlob.class;
                 default -> System.out.println("idk man");
             }
@@ -66,7 +167,6 @@ public class GitRepository {
             return c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
         }
         catch (Exception e){
-            e.printStackTrace();
             e.getMessage();
             return null;
         }
@@ -77,12 +177,12 @@ public class GitRepository {
 
         GitObject obj = new GitBlob();
         switch (type) {
-            //case "commit" ->
-            //    obj = new GitCommit(data);
-            //case "tree" ->
-            //    obj = new GitTree(data);
-            //case "tag" ->
-            //    obj = new GitTag(data);
+            case "commit" ->
+                obj = new GitCommit(data);
+            case "tree" ->
+                obj = new GitTree(data);
+            case "tag" ->
+                obj = new GitTag(data);
             case "blob" ->
                 obj = new GitBlob(data);
             default ->

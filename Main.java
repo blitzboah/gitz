@@ -52,6 +52,7 @@ public class Main {
     public static String[] argsMaker(String[] args){
         String[] newArgs = new String[args.length-1];
         System.arraycopy(args, 1, newArgs, 0, newArgs.length);
+
         return newArgs;
     }
 
@@ -69,8 +70,8 @@ public class Main {
         catFile(repo, obj, type);
     }
 
-    public static void catFile(Path path, String obj, String type){
-        String sha = obj.length() == 40 ? obj : GitRepository.objectFind(path, obj, type);
+    public static void catFile(Path path, String obj, String type) throws Exception {
+        String sha = obj.length() == 40 ? obj : GitRepository.objectFind(path, obj, type, false);
 
         GitObject object = GitRepository.objectRead(sha);
 
@@ -107,7 +108,7 @@ public class Main {
 
         Path repo = GitRepository.repoFind(".", true);
 
-        String objSha = GitRepository.objectFind(repo, commitHash, null);
+        String objSha = GitRepository.objectFind(repo, commitHash, null, false);
         GitObject obj = GitRepository.objectRead(objSha);
 
         if(!(obj instanceof GitCommit)){
@@ -153,7 +154,37 @@ public class Main {
     public static void cmdShowRef() throws IOException {
         Path repo = GitRepository.repoFind(".", true);
         Map<String, Object> refs = GitUtils.refList(repo, null);
-        showRef(repo, refs, true, "refs");
+        GitUtils.showRef(repo, refs, true, "refs");
+    }
+
+    public static void cmdTag(String[] args) throws IOException {
+        Path repo = GitRepository.repoFind(".", true);
+
+        if(args[1] != null){
+            String name = args[1];
+            String object = args.length > 2 ? args[2] : "HEAD";
+            boolean createTagObject = args.length > 3 && args[3].equals("-a");
+
+
+        }
+        else {
+            Map<String, Object> refs = GitUtils.refList(repo, repo.resolve(".gitz/refs/tags"));
+            GitUtils.showRef(repo, refs, false, "tags");
+        }
+    }
+
+    public static void cmdRevParse(String[] args) throws Exception {
+        String name = args[0];
+        String type = null;
+
+        if(args.length > 2 && args[1].equals("-t")){
+            type = args[2];
+        }
+
+        Path repo = GitRepository.repoFind(".", true);
+
+        String res = GitRepository.objectFind(repo, name, type, true);
+        System.out.println(res);
     }
 
 }
