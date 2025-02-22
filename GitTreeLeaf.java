@@ -64,19 +64,41 @@ public class GitTreeLeaf extends GitObject {
     }
 
     public static List<GitTreeLeaf> treeParse(byte[] raw) throws Exception {
-        int pos = 0;
-        int max = raw.length;
         List<GitTreeLeaf> ret = new ArrayList<>();
+        int pos = 0;
 
-        while (pos < max){
-            Object[] result = treeParseOne(raw, pos);
-            pos = (int) result[0];
-            GitTreeLeaf data = (GitTreeLeaf) result[1];
-            ret.add(data);
+        while (pos < raw.length) {
+            int spacePos = GitUtils.indexOf(raw, (byte) ' ', pos);
+            if (spacePos == -1) {
+                throw new Exception("invalid tree entry: no space found");
+            }
+
+            byte[] modeBytes = Arrays.copyOfRange(raw, pos, spacePos);
+            String mode = new String(modeBytes, StandardCharsets.UTF_8);
+
+            int nullPos = GitUtils.indexOf(raw, (byte) 0, spacePos);
+            if (nullPos == -1) {
+                throw new Exception("invalid tree entry: no null terminator found");
+            }
+
+            byte[] pathBytes = Arrays.copyOfRange(raw, spacePos + 1, nullPos);
+            String path = new String(pathBytes, StandardCharsets.UTF_8);
+
+            if (nullPos + 20 > raw.length) {
+                throw new Exception("invalid tree entry: insufficient bytes for sha");
+            }
+            byte[] shaBytes = Arrays.copyOfRange(raw, nullPos + 1, nullPos + 21);
+            String sha = String.format("%040x", new BigInteger(1, shaBytes));
+
+            GitTreeLeaf leaf = new GitTreeLeaf(modeBytes, Paths.get(path), sha);
+            ret.add(leaf);
+
+            pos = nullPos + 21;
         }
 
         return ret;
     }
+
 
     public static Object[] treeParseOne(byte[] raw, int start) throws Exception {
         int x = GitUtils.indexOf(raw, (byte) ' ', start);

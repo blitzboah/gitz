@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -41,6 +40,36 @@ public class Main {
                     }
                     cmdHashObject(hashArgs);
                 }
+                case "ls-tree" -> {
+                    String[] lsTreeArgs = argsMaker(args);
+                    cmdLsTree(lsTreeArgs);
+                }
+                case "checkout" -> {
+                    String[] checkoutArgs = argsMaker(args);
+                    if (checkoutArgs.length < 2) {
+                        System.out.println("usage: checkout <commit-hash> <path>");
+                        return;
+                    }
+                    cmdCheckout(checkoutArgs);
+                }
+                case "show-ref" -> {
+                    cmdShowRef();
+                }
+                case "tag" -> {
+                    String[] tagArgs = argsMaker(args);
+                    cmdTag(tagArgs);
+                }
+                case "rev-parse" -> {
+                    String[] revParseArgs = argsMaker(args);
+                    if (revParseArgs.length < 1) {
+                        System.out.println("usage: rev-parse <name> [-t type]");
+                        return;
+                    }
+                    cmdRevParse(revParseArgs);
+                }
+                case "log" -> {
+                    GitLog.cmdLog();
+                }
                 default -> System.out.println("type correctly lil bro");
             }
         }
@@ -71,7 +100,7 @@ public class Main {
     }
 
     public static void catFile(Path path, String obj, String type) throws Exception {
-        String sha = obj.length() == 40 ? obj : GitRepository.objectFind(path, obj, type, false);
+        String sha = obj.length() == 40 ? obj : GitRepository.objectFind(path, obj, type, true);
 
         GitObject object = GitRepository.objectRead(sha);
 
@@ -96,10 +125,12 @@ public class Main {
         System.out.println(sha);
     }
 
-    public static void cmdLsTree(String[] args){
+    public static void cmdLsTree(String[] args) throws Exception {
         Path repo = GitRepository.repoFind(".", true);
         String treeRef = args[0];
         boolean recursive = args.length > 1 && args[1].equals("-r");
+
+        GitTreeLeaf.lsTree(repo, treeRef, recursive, "");
     }
 
     public static void cmdCheckout(String[] args) throws Exception {

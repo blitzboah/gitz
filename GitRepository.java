@@ -23,6 +23,8 @@ public class GitRepository {
 
     public static String objectFind(Path path, String name, String fmt, boolean follow) throws Exception {
         List<String> sha = objectResolve(path, name);
+        System.out.println("finding obj: "+name);
+        System.out.println("resolved candidates: "+sha);
 
         if(sha.isEmpty()){
             throw new Exception("no such reference "+name);
@@ -75,10 +77,12 @@ public class GitRepository {
 
     public static List<String> objectResolve(Path repo, String name) throws IOException {
         List<String> candidates = new ArrayList<>();
+        System.out.println("resolving reference: "+name);
         Pattern hashPattern = Pattern.compile("^[0-9A-Fa-f]{4,40}$");
 
         // empty string? abort
         if(name == null || name.trim().isEmpty()){
+            System.out.println("empty reference name");
             return candidates;
         }
 
@@ -91,9 +95,8 @@ public class GitRepository {
         }
 
         if(hashPattern.matcher(name).matches()){
-            String lowerName = name.toLowerCase();
             String prefix = name.substring(0,2);
-            Path path = repo.resolve(".gitz/objects"+prefix);
+            Path path = repo.resolve(".gitz/objects/"+prefix);
 
             if(Files.exists(path)){
                 String rem = name.substring(2);
@@ -102,6 +105,7 @@ public class GitRepository {
                     for(File f: files){
                         String fileName = f.getName();
                         if(fileName.startsWith(rem)){
+                            System.out.println("match found");
                             candidates.add(prefix + fileName);
                         }
                     }
@@ -119,6 +123,7 @@ public class GitRepository {
             candidates.add(asBranch);
         }
 
+        System.out.println("resolved candidates returned from objRes: "+candidates);
         return candidates;
     }
 
@@ -126,7 +131,7 @@ public class GitRepository {
         Path path = repoPath("objects", sha.substring(0,2), sha.substring(2));
         File file = path.toFile();
         if(!file.exists()){
-            System.out.println("file doesn't exist lil bro");
+            System.out.println("file doesn't exist");
             return null;
         }
 
@@ -134,6 +139,7 @@ public class GitRepository {
             InflaterInputStream iis = new InflaterInputStream(fis);
 
             byte[] raw = iis.readAllBytes();
+            System.out.println("raw obj length: "+raw.length);
 
             int x = indexOf(raw, (byte) ' ');
             if(x == -1) throw new RuntimeException("malformed object: no obj found");
@@ -141,15 +147,17 @@ public class GitRepository {
             byte[] fmtBytes = new byte[x];
             System.arraycopy(raw, 0, fmtBytes, 0, x);
             String fmt = new String(fmtBytes, StandardCharsets.US_ASCII);
+            System.out.println("obj format: "+fmt);
 
             int y = indexOf(raw, (byte) 0, x);
             if(y == -1) throw new RuntimeException("malformed object: no null char found");
 
-            String sizeStr = new String(raw, x+1, y-x+1, StandardCharsets.US_ASCII);
+            String sizeStr = new String(raw, x+1, y-(x+1), StandardCharsets.US_ASCII).trim();
             int size = Integer.parseInt(sizeStr);
             if(size != raw.length- y - 1){
                 throw new RuntimeException("malformed object "+sha+": bad length");
             }
+            System.out.println("obj size: +"+size);
 
             Class<? extends GitObject> c = null;
             switch (fmt){
@@ -163,11 +171,12 @@ public class GitRepository {
             byte[] data = new byte[size];
             System.arraycopy(raw, y+1, data, 0, size);
             assert c != null;
-            System.out.println("obj returned");
+            System.out.println("obj deserialized");
             return c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
         }
         catch (Exception e){
             e.getMessage();
+            e.printStackTrace();
             return null;
         }
     }
