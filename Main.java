@@ -2,8 +2,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.GroupPrincipal;
+import java.nio.file.attribute.UserPrincipal;
+import java.nio.file.attribute.UserPrincipalLookupService;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -216,6 +220,53 @@ public class Main {
 
         String res = GitRepository.objectFind(repo, name, type, true);
         System.out.println(res);
+    }
+
+    public static void cmdLsFiles(boolean verbose) throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        if(verbose){
+            System.out.println("index file format v" + index.getVersion() + ", containing " + index.getEntries().size() + " entries");
+        }
+
+        for(GitIndexEntry e : index.getEntries()) {
+            System.out.println(e.getName());
+
+            if (verbose) {
+                String entryType = switch (e.getModeType()) {
+                    case 0b1000 -> "regular file";
+                    case 0b1010 -> "symlink";
+                    case 0b1110 -> "git link";
+                    default -> "unknown";
+                };
+
+                System.out.println("  " + entryType + " with perms: " + Integer.toOctalString(e.getModePerms()));
+                System.out.println("  on blob: " + e.getSha());
+                System.out.println("  created: " + e.getCtime()[0] + "." + e.getCtime()[1] +
+                        ", modified: " + e.getMtime()[0] + "." + e.getMtime()[1]);
+                System.out.println("  device: " + e.getDev() + ", inode: " + e.getIno());
+
+                // unix user and group lookup
+                String user = "unknown";
+                String group = "unknown";
+                try {
+                    UserPrincipalLookupService lookupService = FileSystems.getDefault().getUserPrincipalLookupService();
+                    UserPrincipal userPrincipal = lookupService.lookupPrincipalByGroupName(String.valueOf(e.getUid()));
+                    GroupPrincipal groupPrincipal = lookupService.lookupPrincipalByGroupName(String.valueOf(e.getGid()));
+
+                    user = userPrincipal.getName();
+                    group = groupPrincipal.getName();
+                    
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+
+                System.out.println("  user: " + user + " (" + e.getUid() + ")  group: " + group + " (" + e.getGid() + ")");
+                System.out.println("  flags: stage=" + e.getFlagStage() + " assume_valid=" + e.isFlagAssumeValid());
+            }
+        }
     }
 
 }
