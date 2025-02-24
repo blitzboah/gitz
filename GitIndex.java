@@ -112,7 +112,7 @@ public class GitIndex extends GitObject {
             // read sha
             byte[] shaBytes = new byte[20];
             buffer.get(shaBytes);
-            String sha = String.format("%40%", new BigInteger(1, shaBytes));
+            String sha = String.format("%40x", new BigInteger(1, shaBytes));
 
             // read flags
             short flags = buffer.getShort();

@@ -102,7 +102,7 @@ public class GitTreeLeaf extends GitObject {
 
     public static Object[] treeParseOne(byte[] raw, int start) throws Exception {
         int x = GitUtils.indexOf(raw, (byte) ' ', start);
-        if (x - start != 5 || x - start != 6) {
+        if (x - start != 5 && x - start != 6) {
             throw new Exception("invalid mode length");
         }
 

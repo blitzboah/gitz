@@ -269,4 +269,27 @@ public class Main {
         }
     }
 
+    public static void cmdCheckIgnore(String[] args) throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
+        GitIgnore rules = GitIgnore.gitIgnoreRead(repo);
+
+        for(String path: args){
+            if(GitIgnore.checkIgnore(rules, path)){
+                System.out.println(path);
+            }
+        }
+    }
+
+    public static void cmdStatus() throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        GitStatus.cmdStatusBranch(repo);
+        GitStatus.cmdStatusHeadIndex(repo, index);
+        System.out.println();
+        GitStatus.cmdStatusIndexWorktree(repo, index);
+    }
+
 }

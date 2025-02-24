@@ -236,7 +236,7 @@ public class GitRepository {
         return sha;
     }
 
-    private static String computeSHA(byte[] data) throws NoSuchAlgorithmException {
+    static String computeSHA(byte[] data) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         byte[] hashBytes = digest.digest(data);
         StringBuilder hexString = new StringBuilder();
