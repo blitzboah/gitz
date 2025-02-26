@@ -1,8 +1,9 @@
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.*;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -172,5 +173,102 @@ public class GitIndex extends GitObject {
         }
 
         return new GitIndex(data);
+    }
+
+    public static void indexWrite(Path repo, GitIndex index){
+        Path indexFilePath = repo.resolve(".gitz/index");
+
+        try(FileOutputStream fos = new FileOutputStream(indexFilePath.toFile())) {
+
+            // header
+            fos.write("DIRC".getBytes(StandardCharsets.US_ASCII));
+
+            // write veriosn number
+            writePut(fos, index.getVersion(), 4);
+
+            // write no of entries
+            writePut(fos, index.getEntries().size(), 4);
+
+            // entries
+
+            int idx = 0;
+            for(GitIndexEntry e: index.getEntries()){
+
+                //write ctime
+                writePut(fos, e.getCtime()[0], 4);
+                writePut(fos, e.getCtime()[1], 4);
+
+                // write mtime
+                writePut(fos, e.getMtime()[0], 4);
+                writePut(fos, e.getMtime()[1], 4);
+
+                // write dev
+                writePut(fos, e.getDev(), 4);
+
+                // write ino
+                writePut(fos, e.getIno(), 4);
+
+                // write mode
+                int mode = (e.getModeType() << 12 | e.getModePerms());
+                writePut(fos, mode, 4);
+
+                // write uid
+                writePut(fos, e.getUid(), 4);
+
+                // write gid
+                writePut(fos, e.getGid(), 4);
+
+                // write fsize
+                writePut(fos, e.getFsize(), 4);
+
+                // write sha
+                byte[] shaBytes = new byte[20];
+                byte[] shaHexBytes = e.getSha().getBytes(StandardCharsets.US_ASCII);
+                for (int i = 0; i < 20; i++) {
+                    shaBytes[i] = ((byte) Integer.parseInt(new String(shaHexBytes, i*2, 2), 1));
+                }
+                fos.write(shaBytes);
+
+                // write flags
+                int flagAssumeValid = e.isFlagAssumeValid() ? 0x8000 : 0;
+                int flagStage = e.getFlagStage() << 12;
+                byte[] nameBytes = e.getName().getBytes(StandardCharsets.UTF_8);
+                int nameLength = Math.min(nameBytes.length, 0xFFF);
+                int flags = flagAssumeValid | flagStage | nameLength;
+
+                writePut(fos, flags, 2);
+
+                // write name and null byte
+                fos.write(nameBytes);
+                fos.write(0);
+
+                idx += 62 + nameBytes.length + 1;
+
+                // add padding if necessary
+                if(idx % 8 != 0){
+                    int pad = 8 - (idx % 8);
+                    fos.write(new byte[pad]);
+                    idx += pad;
+                }
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void writePut(FileOutputStream fos, long val, int numBytes) throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(numBytes);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+
+        switch (numBytes){
+            case 1 -> buffer.put((byte) val);
+            case 2 -> buffer.putShort((short) val);
+            case 4 -> buffer.putInt((int) val);
+            case 8 -> buffer.putLong(val);
+            default -> System.out.println("unsupported no of bytes: "+numBytes);
+        }
+
+        fos.write(buffer.array());
     }
 }

@@ -1,3 +1,5 @@
+import java.nio.file.Path;
+
 public class GitIndexEntry extends GitObject{
 
     private long[] ctime; // last time file's metadata changed

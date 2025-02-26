@@ -1,14 +1,14 @@
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
@@ -354,5 +354,124 @@ public class GitRepository {
         }
 
         return repoFind(parent.getAbsolutePath(), required);
+    }
+
+    public static void rm(Path repo, List<Path> paths, boolean delete, boolean skipMissing) throws Exception {
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        String worktreePath = repo.toString() + FileSystems.getDefault().getSeparator();
+
+        // make paths absolute
+        Set<Path> absPaths = new HashSet<>();
+        for (Path path : paths) {
+            Path absPath = path.toAbsolutePath();
+            if (absPath.startsWith(repo)) {
+                absPaths.add(absPath);
+            } else {
+                throw new RuntimeException("cannot remove paths outside of worktree: " + path);
+            }
+        }
+
+        // the list of entries to keep, which we will write back to the index
+        List<GitIndexEntry> keptEntries = new ArrayList<>();
+        // the list of removed paths, will use after index update to physically remove the actual paths from the filesystem type sht
+        List<Path> remove = new ArrayList<>();
+
+        // preserve the others in keptEntries
+        for (GitIndexEntry e : index.getEntries()) {
+            Path fullPath = repo.resolve(e.getName());
+
+            if (absPaths.contains(fullPath)) {
+                remove.add(fullPath);
+                absPaths.remove(fullPath);
+            } else {
+                keptEntries.add(e); // preserve entry
+            }
+        }
+
+        // if absPaths is not empty, it means some paths weren't in the index
+        if (!absPaths.isEmpty() && !skipMissing) {
+            throw new RuntimeException("cannot remove paths not in the index: " + absPaths);
+        }
+
+        // physically delete paths from filesystem
+        if (delete) {
+            for (Path path : remove) {
+                Files.deleteIfExists(path);
+            }
+        }
+
+        // update the list of entries in the index, and write it back
+        index.setEntries(keptEntries);
+        GitIndex.indexWrite(repo, index);
+    }
+
+    public static void add(Path repo, List<Path> paths, boolean delete, boolean skipMissing) throws Exception {
+        // first remove all paths from the index, if they exist
+        rm(repo, paths, false, true);
+
+        Path worktree = repo;
+        String worktreePath = worktree.toString() + FileSystems.getDefault().getSeparator();
+
+        // convert the paths to pairs: (absolute, relative_to_worktree)
+        // also delete them from the index if they're present
+        Set<Map.Entry<Path, Path>> cleanPaths = new HashSet<>();
+        for (Path path : paths) {
+            Path absPath = path.toAbsolutePath();
+            if (!(absPath.startsWith(worktree) && Files.isRegularFile(absPath))) {
+                throw new RuntimeException("Not a file, or outside the worktree: " + path);
+            }
+            Path relPath = worktree.relativize(absPath);
+            cleanPaths.add(new AbstractMap.SimpleEntry<>(absPath, relPath));
+        }
+
+        // find and read the index. it was modified by rm
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        for (Map.Entry<Path, Path> entry : cleanPaths) {
+            Path absPath = entry.getKey();
+            Path relPath = entry.getValue();
+
+            byte[] fileContent = Files.readAllBytes(absPath);
+            String sha = GitRepository.objectHash(fileContent, "blob", repo);
+
+            BasicFileAttributes attrs = Files.readAttributes(absPath, BasicFileAttributes.class);
+            FileTime ctime = attrs.creationTime();
+            FileTime mtime = attrs.lastModifiedTime();
+            long ctimeS = ctime.toMillis();
+            long ctimeNs = ctime.toMillis() / 1000;
+            long mtimeS = mtime.toMillis();
+            long mtimeNs = mtime.toMillis() / 1000;
+
+            long dev = 0; // placeholder, as java does not provide device id directly
+            long ino = 0;
+            int uid = 0;
+            int gid = 0;
+
+            GitIndexEntry indexEntry = new GitIndexEntry(
+                    new long[]{ctimeS, ctimeNs},
+                    new long[]{mtimeS, mtimeNs},
+                    dev,
+                    ino,
+                    0b1000, // mode type: regular file
+                    420,  // mode permissions: rw-r--r-- 420 is octal rep for 0o644
+                    uid,
+                    gid,
+                    attrs.size(),
+                    sha,
+                    false,  // flagAssumeValid
+                    0,      // flagStage
+                    relPath.toString()
+            );
+            index.getEntries().add(indexEntry);
+        }
+
+        // write the index back
+        GitIndex.indexWrite(repo, index);
+    }
+
+    public static String objectHash(byte[] data, String type, Path repo) throws Exception {
+        GitObject obj = new GitBlob(data);
+        return GitRepository.objectWrite(obj);
     }
 }

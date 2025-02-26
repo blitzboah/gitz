@@ -74,6 +74,17 @@ public class Main {
                 case "log" -> {
                     GitLog.cmdLog();
                 }
+                case "ls-files" -> {
+                    boolean verbose = args.length > 1 && args[1].equals("-v");
+                    cmdLsFiles(verbose);
+                }
+                case "check-ignore" -> {
+                    String[] ignoreArgs = argsMaker(args);
+                    cmdCheckIgnore(ignoreArgs);
+                }
+                case "status" -> {
+                    cmdStatus();
+                }
                 default -> System.out.println("type correctly lil bro");
             }
         }
