@@ -5,10 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
@@ -337,24 +337,26 @@ public class GitRepository {
         return config;
     }
 
-    public static Path repoFind(String path, boolean required){
+    public static Path repoFind(String path, boolean required) {
         File dir = new File(path).getAbsoluteFile();
 
-        if(new File(dir, ".gitz").isDirectory()){
+        if (new File(dir, ".gitz").isDirectory()) {
+            gitdir = dir.toPath().resolve(".gitz");
             return dir.toPath();
         }
 
         File parent = dir.getParentFile();
-
-        if(parent == null || dir.equals(parent)){
-            if(required)
+        if (parent == null || dir.equals(parent)) {
+            if (required) {
                 throw new RuntimeException("not a gitz dir");
-            else
+            } else {
                 return null;
+            }
         }
 
         return repoFind(parent.getAbsolutePath(), required);
     }
+
 
     public static void rm(Path repo, List<Path> paths, boolean delete, boolean skipMissing) throws Exception {
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
@@ -407,68 +409,58 @@ public class GitRepository {
     }
 
     public static void add(Path repo, List<Path> paths, boolean delete, boolean skipMissing) throws Exception {
-        // first remove all paths from the index, if they exist
-        rm(repo, paths, false, true);
+        System.out.println("adding files: " + paths); // debug log
 
-        Path worktree = repo;
-        String worktreePath = worktree.toString() + FileSystems.getDefault().getSeparator();
+        // remove existing entries from the index
+        rm(repo, paths, delete, true);
 
-        // convert the paths to pairs: (absolute, relative_to_worktree)
-        // also delete them from the index if they're present
-        Set<Map.Entry<Path, Path>> cleanPaths = new HashSet<>();
+        AtomicReference<Path> worktree = new AtomicReference<>(repo);
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+        Map<String, GitIndexEntry> entryMap = new HashMap<>();
+
+        // load existing entries into a map
+        for (GitIndexEntry entry : index.getEntries()) {
+            entryMap.put(entry.getName(), entry);
+        }
+
         for (Path path : paths) {
             Path absPath = path.toAbsolutePath();
-            if (!(absPath.startsWith(worktree) && Files.isRegularFile(absPath))) {
-                throw new RuntimeException("Not a file, or outside the worktree: " + path);
+            if (!absPath.startsWith(worktree.get()) || !Files.isRegularFile(absPath)) {
+                throw new RuntimeException("Not a file or outside the worktree: " + path);
             }
-            Path relPath = worktree.relativize(absPath);
-            cleanPaths.add(new AbstractMap.SimpleEntry<>(absPath, relPath));
-        }
-
-        // find and read the index. it was modified by rm
-        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
-
-        for (Map.Entry<Path, Path> entry : cleanPaths) {
-            Path absPath = entry.getKey();
-            Path relPath = entry.getValue();
 
             byte[] fileContent = Files.readAllBytes(absPath);
-            String sha = GitRepository.objectHash(fileContent, "blob", repo);
+            GitBlob blob = new GitBlob(fileContent);
+            String sha = objectWrite(blob);
+            System.out.println("Generated hash for " + path + ": " + sha);
 
             BasicFileAttributes attrs = Files.readAttributes(absPath, BasicFileAttributes.class);
-            FileTime ctime = attrs.creationTime();
-            FileTime mtime = attrs.lastModifiedTime();
-            long ctimeS = ctime.toMillis();
-            long ctimeNs = ctime.toMillis() / 1000;
-            long mtimeS = mtime.toMillis();
-            long mtimeNs = mtime.toMillis() / 1000;
 
-            long dev = 0; // placeholder, as java does not provide device id directly
-            long ino = 0;
-            int uid = 0;
-            int gid = 0;
+            int modeType = Files.isSymbolicLink(absPath) ? 0b1010 : 0b1000; // symlink or regular file
+            int modePerms = Files.isExecutable(absPath) ? 0755 : 0644;
+
+            String cleanName = worktree.get().relativize(absPath).toString().replace("\0", "");
 
             GitIndexEntry indexEntry = new GitIndexEntry(
-                    new long[]{ctimeS, ctimeNs},
-                    new long[]{mtimeS, mtimeNs},
-                    dev,
-                    ino,
-                    0b1000, // mode type: regular file
-                    420,  // mode permissions: rw-r--r-- 420 is octal rep for 0o644
-                    uid,
-                    gid,
+                    new long[]{attrs.creationTime().toMillis() / 1000, 0},
+                    new long[]{attrs.lastModifiedTime().toMillis() / 1000, 0},
+                    0, 0, // dev and inode set to 0
+                    modeType, modePerms,
+                    0, 0, // uid and gid set to 0
                     attrs.size(),
-                    sha,
-                    false,  // flagAssumeValid
-                    0,      // flagStage
-                    relPath.toString()
+                    sha, false, 0,
+                    cleanName
             );
-            index.getEntries().add(indexEntry);
+
+            entryMap.put(indexEntry.getName(), indexEntry); // update or add entry
         }
 
-        // write the index back
+        // update index with all entries
+        index.setEntries(new ArrayList<>(entryMap.values()));
         GitIndex.indexWrite(repo, index);
+        System.out.println("index updated successfully.");
     }
+
 
     public static String objectHash(byte[] data, String type, Path repo) throws Exception {
         GitObject obj = new GitBlob(data);

@@ -1,5 +1,6 @@
 import java.io.*;
 import java.math.BigInteger;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -81,8 +82,11 @@ public class GitIndex extends GitObject {
         int count = buffer.getInt();
         entries = new ArrayList<>();
 
+        System.out.println("reading " + count + " entries from index file");
+
         // read entries
         for (int i = 0; i < count; i++) {
+            System.out.println("reading entry " + (i+1) + " at position " + buffer.position());
 
             // read timestamps
             long[] ctime = new long[]{buffer.getInt(), buffer.getInt()};
@@ -93,17 +97,14 @@ public class GitIndex extends GitObject {
             long inode = buffer.getInt() & 0xFFFFFFFFL;
 
             // read mode
-            short unsued = buffer.getShort();
-            if (unsued != 0) {
-                throw new Exception("expected unused bits to be 0");
-            }
+            int mode = buffer.getInt(); // read the entire mode field (4 bytes)
+            int modeType = (mode >> 12) & 0xF; // extract the type from the upper 4 bits of the mode
+            int modePerms = mode & 0x1FF; // extract permissions from the lower 9 bits
 
-            short mode = buffer.getShort();
-            int modeType = (mode >> 12) & 0xF; // the upper 4 bits determine the type of file like regular, symlink, commit. damn
             if (modeType != 0b1000 && modeType != 0b1010 && modeType != 0b1110) {
-                throw new Exception("invalid mode type: " + modeType);
+                System.out.println("warning: unexpected mode type " + modeType + " possibly an empty file, defaulting to regular file");
+                modeType = 0b1000;
             }
-            int modePerms = mode & 0b111111111; // the lower 9 bits store file permissions
 
             // read uid and size
             int uid = buffer.getInt();
@@ -113,26 +114,30 @@ public class GitIndex extends GitObject {
             // read sha
             byte[] shaBytes = new byte[20];
             buffer.get(shaBytes);
-            String sha = String.format("%40x", new BigInteger(1, shaBytes));
+            String sha = String.format("%040x", new BigInteger(1, shaBytes));
 
             // read flags
             short flags = buffer.getShort();
-            boolean flagAssumeValid = (flags & 0b1000000000000000) != 0; // it checks if file should be ignored or not, damn
-            boolean flagExtended = (flags & 0b0100000000000000) != 0; // indicates the presence of extended flag, throwing error
+            boolean flagAssumeValid = (flags & 0x8000) != 0; // highest bit (bit 15)
+            boolean flagExtended = (flags & 0x4000) != 0; // bit 14
+            int flagStage = (flags & 0x3000) >> 12; // bits 12-13
+            int nameLength = flags & 0x0FFF; // bits 0-11
+
+            // If we encounter an extended flag, just log it but don't skip the entry
             if (flagExtended) {
-                throw new Exception("extended flags not supported");
+                System.out.println("entry has extended flags - but continuing to parse");
             }
-            int flagStage = (flags & 0b0011000000000000) >> 12; // used for merge conflicts resolution damn
-            int nameLength = flags & 0b0000111111111111; // extracts name length
 
             // read name
             String name;
             if (nameLength < 0xFFF) {
                 byte[] nameBytes = new byte[nameLength];
                 buffer.get(nameBytes);
-                name = new String(nameBytes, StandardCharsets.UTF_8);
+                // skip the null terminator
                 buffer.get();
+                name = new String(nameBytes, StandardCharsets.UTF_8);
             } else {
+                // for longer names, read until null byte
                 ArrayList<Byte> nameBytes = new ArrayList<>();
                 byte current;
                 do {
@@ -149,112 +154,129 @@ public class GitIndex extends GitObject {
                 name = new String(nameBytesArray, StandardCharsets.UTF_8);
             }
 
-            // align to 8 bytes
-            int padding = 8 - (buffer.position() % 8);
-            if (padding < 8) {
-                buffer.position(buffer.position() + padding);
-            }
+            // calculate padding based on entrySize (same as during serialization)
+            int entrySize = 62 + nameLength + 1;
+            int padding = (8 - (entrySize % 8)) % 8;
+            buffer.position(buffer.position() + padding);
 
             // create and add entry
             GitIndexEntry entry = new GitIndexEntry(ctime, mtime, dev, inode, modeType, modePerms,
                     uid, gid, fsize, sha, flagAssumeValid, flagStage, name);
             entries.add(entry);
+
+            System.out.println("added entry: " + name + " with SHA: " + sha);
         }
+
+        System.out.println("successfully read " + entries.size() + " entries");
     }
 
-    public static GitIndex readFromFile(File indexFile) throws Exception{
-        if(!indexFile.exists()){
-            return new GitIndex();
+    public static GitIndex readFromFile(File indexFile) throws Exception {
+        if (!indexFile.exists() || indexFile.length() == 0) { // check if file is empty
+            System.out.println("index file not found or empty, initializing new index.");
+            GitIndex newIndex = new GitIndex();
+            newIndex.init();
+            return newIndex;
         }
 
         byte[] data;
-        try (FileInputStream fis = new FileInputStream(indexFile)){
+        try (FileInputStream fis = new FileInputStream(indexFile)) {
             data = fis.readAllBytes();
         }
 
-        return new GitIndex(data);
+        try {
+            return new GitIndex(data);
+        } catch (BufferUnderflowException e) {
+            System.out.println("corrupt index file, reinitializing...");
+            GitIndex newIndex = new GitIndex();
+            newIndex.init();
+            return newIndex;
+        }
     }
 
-    public static void indexWrite(Path repo, GitIndex index){
+
+    public static void indexWrite(Path repo, GitIndex index) {
         Path indexFilePath = repo.resolve(".gitz/index");
 
-        try(FileOutputStream fos = new FileOutputStream(indexFilePath.toFile())) {
-
-            // header
+        try (FileOutputStream fos = new FileOutputStream(indexFilePath.toFile())) {
+            // write header
             fos.write("DIRC".getBytes(StandardCharsets.US_ASCII));
+            writePut(fos, index.getVersion(), 4); // version
+            writePut(fos, index.getEntries().size(), 4); // number of entries
 
-            // write veriosn number
-            writePut(fos, index.getVersion(), 4);
+            System.out.println("writing " + index.getEntries().size() + " entries to index file");
 
-            // write no of entries
-            writePut(fos, index.getEntries().size(), 4);
+            // write entries
+            for (GitIndexEntry e : index.getEntries()) {
+                // timestamps
+                writePut(fos, e.getCtime()[0], 4); // ctime seconds
+                writePut(fos, e.getCtime()[1], 4); // ctime nanoseconds
+                writePut(fos, e.getMtime()[0], 4); // mtime seconds
+                writePut(fos, e.getMtime()[1], 4); // mtime nanoseconds
 
-            // entries
-
-            int idx = 0;
-            for(GitIndexEntry e: index.getEntries()){
-
-                //write ctime
-                writePut(fos, e.getCtime()[0], 4);
-                writePut(fos, e.getCtime()[1], 4);
-
-                // write mtime
-                writePut(fos, e.getMtime()[0], 4);
-                writePut(fos, e.getMtime()[1], 4);
-
-                // write dev
+                // Device and inode
                 writePut(fos, e.getDev(), 4);
-
-                // write ino
                 writePut(fos, e.getIno(), 4);
 
-                // write mode
-                int mode = (e.getModeType() << 12 | e.getModePerms());
-                writePut(fos, mode, 4);
+                // mode: write as a 4-byte field
+                // first two bytes are unused (should be 0)
+                // third byte contains the file type in its upper 4 bits
+                // fourth byte contains the file permissions
+                int modeField = 0;
+                modeField |= (e.getModeType() & 0xF) << 12; // file type in upper 4 bits of 2 bytes
+                modeField |= (e.getModePerms() & 0x1FF); // permissions in lower 9 bits
+                writePut(fos, modeField, 4);
 
-                // write uid
+                // UID and GID
                 writePut(fos, e.getUid(), 4);
-
-                // write gid
                 writePut(fos, e.getGid(), 4);
 
-                // write fsize
+                // file size
                 writePut(fos, e.getFsize(), 4);
 
-                // write sha
-                byte[] shaBytes = new byte[20];
-                byte[] shaHexBytes = e.getSha().getBytes(StandardCharsets.US_ASCII);
-                for (int i = 0; i < 20; i++) {
-                    shaBytes[i] = ((byte) Integer.parseInt(new String(shaHexBytes, i*2, 2), 1));
-                }
+                // sha-1 hash (20 bytes)
+                byte[] shaBytes = hexStringToBytes(e.getSha());
                 fos.write(shaBytes);
 
-                // write flags
-                int flagAssumeValid = e.isFlagAssumeValid() ? 0x8000 : 0;
-                int flagStage = e.getFlagStage() << 12;
+                // flags: assume valid, stage, and name length
                 byte[] nameBytes = e.getName().getBytes(StandardCharsets.UTF_8);
-                int nameLength = Math.min(nameBytes.length, 0xFFF);
-                int flags = flagAssumeValid | flagStage | nameLength;
+                int flags = 0;
+                if (e.isFlagAssumeValid()) {
+                    flags |= 0x8000;  // set the highest bit for assume-valid flag (bit 15)
+                }
+                // DO NOT set the extended flag (bit 14) unless you're actually using extended features
+                flags |= (e.getFlagStage() & 0x3) << 12;  // set the stage bits (bits 12-13)
+                flags |= Math.min(nameBytes.length, 0xFFF);  // set the name length (bits 0-11)
 
                 writePut(fos, flags, 2);
 
-                // write name and null byte
+                // file name + null terminator
                 fos.write(nameBytes);
                 fos.write(0);
 
-                idx += 62 + nameBytes.length + 1;
+                // padding to align to 8 bytes
+                int entrySize = 62 + nameBytes.length + 1; // fixed bytes + name + null byte
+                int padding = (8 - (entrySize % 8)) % 8;
+                fos.write(new byte[padding]);
 
-                // add padding if necessary
-                if(idx % 8 != 0){
-                    int pad = 8 - (idx % 8);
-                    fos.write(new byte[pad]);
-                    idx += pad;
-                }
+                System.out.println("wrote entry: " + e.getName() + " with SHA: " + e.getSha());
             }
 
+            System.out.println("index successfully written to " + indexFilePath);
+
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("failed to write index file", e);
         }
+    }
+
+    private static byte[] hexStringToBytes(String hex) {
+        byte[] bytes = new byte[20];
+        for (int i = 0; i < 20; i++) {
+            int startIdx = i * 2;
+            if (startIdx + 2 <= hex.length()) {
+                bytes[i] = (byte) Integer.parseInt(hex.substring(startIdx, startIdx + 2), 16);
+            }
+        }
+        return bytes;
     }
 
     public static void writePut(FileOutputStream fos, long val, int numBytes) throws IOException {

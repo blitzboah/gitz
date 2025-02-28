@@ -5,10 +5,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalLookupService;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 public class Main {
@@ -84,6 +87,20 @@ public class Main {
                 }
                 case "status" -> {
                     cmdStatus();
+                }
+                case "rm" -> {
+                    String[] rmArgs = argsMaker(args);
+                    cmdRm(rmArgs);
+                }
+                case "add" -> {
+                    String[] addArgs = argsMaker(args);
+                    cmdAdd(addArgs);
+                }
+                case "show-index" -> {
+                    cmdShowIndex();
+                }
+                case "dump-index" -> {
+                    cmdDumpIndex();
                 }
                 default -> System.out.println("type correctly lil bro");
             }
@@ -301,6 +318,70 @@ public class Main {
         GitStatus.cmdStatusHeadIndex(repo, index);
         System.out.println();
         GitStatus.cmdStatusIndexWorktree(repo, index);
+    }
+
+    public static void cmdRm(String[] args) throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        List<Path> paths = new ArrayList<>();
+        for (String arg : args) {
+            paths.add(Paths.get(arg));
+        }
+        assert repo != null;
+        GitRepository.rm(repo, paths, true, false);
+    }
+
+    public static void cmdAdd(String[] args) throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        if (repo == null) {
+            throw new RuntimeException("not a gitz dir");
+        }
+
+        List<Path> paths = new ArrayList<>();
+        for (String arg : args) {
+            Path path = repo.resolve(arg);
+            if (!Files.exists(path)) {
+                throw new RuntimeException("file does not exist: " + arg);
+            }
+            paths.add(path);
+        }
+
+        GitRepository.add(repo, paths, false, true);
+    }
+
+    public static void cmdShowIndex() throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        System.out.println("index file version: "+index.getVersion());
+        System.out.println("entries:");
+
+        for(GitIndexEntry e: index.getEntries()){
+            System.out.println("  file: " +e.getName());
+            System.out.println("  sha-1: "+e.getSha());
+            System.out.println("  size:" +e.getFsize());
+            System.out.println("  mode:" +Integer.toOctalString(e.getModePerms()));
+            System.out.println("------------------------");
+        }
+
+    }
+
+    public static void cmdDumpIndex() throws IOException {
+        Path repo = GitRepository.repoFind(".", true);
+        Path indexFile = repo.resolve(".gitz/index");
+
+        if (!Files.exists(indexFile)) {
+            System.out.println("No index file found.");
+            return;
+        }
+
+        byte[] data = Files.readAllBytes(indexFile);
+        System.out.println("Raw index file (hex dump):");
+
+        for (int i = 0; i < data.length; i++) {
+            System.out.printf("%02x ", data[i]);
+            if ((i + 1) % 16 == 0) System.out.println(); // new line every 16 bytes
+        }
+        System.out.println();
     }
 
 }
