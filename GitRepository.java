@@ -23,6 +23,7 @@ public class GitRepository {
 
     public static String objectFind(Path path, String name, String fmt, boolean follow) throws Exception {
         List<String> sha = objectResolve(path, name);
+
         System.out.println("finding obj: "+name);
         System.out.println("resolved candidates: "+sha);
 
@@ -87,7 +88,7 @@ public class GitRepository {
         }
 
         if(name.equals("HEAD")){
-            String headRef = GitUtils.refResolve(repo, Path.of("HEAD"));
+            String headRef = GitUtils.refResolve(repo, Path.of(".gitz/HEAD"));
             if(headRef != null){
                 candidates.add(headRef);
             }
@@ -277,7 +278,7 @@ public class GitRepository {
                 repoDir(new String[]{"refs", "tags"}, true);
                 repoDir(new String[]{"refs", "heads"},true);
 
-                writeFile(new String[]{"HEADS"}, "ref: refs/heads/master\n"); //master as linus intended
+                writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); //master as linus intended
                 writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
                 writeFile(new String[]{"config"}, repoDefaultConfig().toString());
 

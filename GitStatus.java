@@ -19,17 +19,6 @@ public class GitStatus {
         }
     }
 
-    public static void cmdStatusBranch(Path repo) throws Exception {
-        String branch = branchGetActive(repo);
-        if(branch != null){
-            System.out.println("on branch "+branch);
-        }
-        else{
-            String headSha = GitRepository.objectFind(repo, "HEAD", null, true);
-            System.out.println("HEAD detached at "+headSha);
-        }
-    }
-
     public static Map<String, String> treeToDict(Path repo, String ref, String prefix) throws Exception {
         Map<String, String> ret = new HashMap<>();
         String treeSha = GitRepository.objectFind(repo, ref, "tree", true);

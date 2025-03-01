@@ -312,9 +312,22 @@ public class Main {
     public static void cmdStatus() throws Exception {
         Path repo = GitRepository.repoFind(".", true);
         assert repo != null;
-        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
 
-        GitStatus.cmdStatusBranch(repo);
+        String activeBranch = GitStatus.branchGetActive(repo);
+        if(activeBranch == null){
+            System.out.println("not currently on any branch");
+            return;
+        }
+        else{
+            System.out.println("on branch "+activeBranch+"\n");
+        }
+
+        if((GitUtils.refResolve(repo, Path.of(".gitz/HEAD"))) == null){
+            System.out.println("no commits yet");
+            return;
+        }
+
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
         GitStatus.cmdStatusHeadIndex(repo, index);
         System.out.println();
         GitStatus.cmdStatusIndexWorktree(repo, index);

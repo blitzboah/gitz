@@ -117,7 +117,12 @@ public class GitUtils {
         String data = Files.readString(path).trim();
 
         if(data.startsWith("ref: ")){
-            return refResolve(path, repo.resolve(data.substring(5)));
+            // extract the reference path without the "ref: " prefix
+            String refPath = data.substring(5).trim();
+            // create a Path object from the reference string
+            Path newRefPath = Path.of(".gitz/"+refPath);
+            // recursively resolve the new reference
+            return refResolve(repo, newRefPath);
         }
         else{
             return data;
