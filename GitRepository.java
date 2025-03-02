@@ -281,6 +281,7 @@ public class GitRepository {
                 writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); //master as linus intended
                 writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
                 writeFile(new String[]{"config"}, repoDefaultConfig().toString());
+                writeFile(new String[]{"info", "exclude"}, "");
 
                 System.out.println("gitz repo initialized");
             }
@@ -466,5 +467,87 @@ public class GitRepository {
     public static String objectHash(byte[] data, String type, Path repo) throws Exception {
         GitObject obj = new GitBlob(data);
         return GitRepository.objectWrite(obj);
+    }
+
+    public static String treeFromIndex(Path repo, GitIndex index) throws Exception {
+        // map to store directories and their contents
+        Map<String, List<Object>> contents = new HashMap<>();
+        contents.put("", new ArrayList<>());
+
+        // enumerate entries and organize them by directory
+        for (GitIndexEntry entry : index.getEntries()) {
+            String dirname = new File(entry.getName()).getParent();
+            if (dirname == null) dirname = "";
+
+            // create dictionary entries up to root
+            String key = dirname;
+            while (!key.isEmpty()) {
+                if (!contents.containsKey(key)) {
+                    contents.put(key, new ArrayList<>());
+                }
+                // get parent directory
+                File keyFile = new File(key);
+                key = keyFile.getParent() != null ? keyFile.getParent() : "";
+            }
+
+            // store the entry in the list
+            contents.get(dirname).add(entry);
+        }
+
+        // sort directories by length in descending order
+        List<String> sortedPaths = new ArrayList<>(contents.keySet());
+        sortedPaths.sort((a, b) -> Integer.compare(b.length(), a.length()));
+
+        // variable to store the current tree's SHA-1
+        String sha = null;
+
+        // process directories from deepest to shallowest
+        for (String path : sortedPaths) {
+            // prepare a new empty tree object
+            GitTree tree = new GitTree();
+            tree.init();
+
+            // add each entry to the new tree
+            for (Object entry : contents.get(path)) {
+                if (entry instanceof GitIndexEntry) {
+                    // regular file entry
+                    GitIndexEntry indexEntry = (GitIndexEntry) entry;
+
+                    // format mode: combine type and permissions
+                    String modeStr = String.format("%02o%04o", indexEntry.getModeType(), indexEntry.getModePerms());
+                    byte[] modeBytes = modeStr.getBytes(StandardCharsets.US_ASCII);
+
+                    // get the basename of the file
+                    String baseName = new File(indexEntry.getName()).getName();
+
+                    // create tree leaf
+                    GitTreeLeaf leaf = new GitTreeLeaf(modeBytes, Path.of(baseName), indexEntry.getSha());
+                    tree.getItems().add(leaf);
+                } else {
+                    // tree entry
+                    Object[] treeEntry = (Object[]) entry;
+                    String baseName = (String) treeEntry[0];
+                    String treeSha = (String) treeEntry[1];
+
+                    // create tree leaf with directory mode (040000)
+                    GitTreeLeaf leaf = new GitTreeLeaf("040000".getBytes(StandardCharsets.US_ASCII),
+                            Path.of(baseName), treeSha);
+                    tree.getItems().add(leaf);
+                }
+            }
+
+            // write the new tree object to the store
+            sha = GitRepository.objectWrite(tree);
+
+            // Add the new tree hash to the parent directory's content list
+            String parent = new File(path).getParent();
+            if (parent == null) parent = "";
+            String base = new File(path).getName();
+
+            // store as object[] {basename, SHA} to distinguish from GitIndexEntry
+            contents.get(parent).add(new Object[] {base, sha});
+        }
+
+        return sha;
     }
 }

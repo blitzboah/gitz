@@ -11,13 +11,18 @@ public class GitLog {
     public static void cmdLog() throws IOException {
         Path repo = GitRepository.repoFind(".", true);
 
+        assert repo != null;
         Path headPath = repo.resolve(".gitz/HEAD");
         String headContent = Files.readString(headPath);
 
-        if(headContent.startsWith("refs: ")){
+        if(headContent.startsWith("ref: ")){
             String refPath = headContent.substring(5).trim();
 
             Path branchPath = repo.resolve(".gitz").resolve(refPath);
+            if(!Files.exists(branchPath)){
+                System.out.println("your current branch 'master' does not have any commits yet");
+                return;
+            }
             String commitSha = Files.readString(branchPath).trim();
 
             printLog(commitSha, new HashSet<>());

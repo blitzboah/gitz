@@ -9,6 +9,8 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalLookupService;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -101,6 +103,10 @@ public class Main {
                 }
                 case "dump-index" -> {
                     cmdDumpIndex();
+                }
+                case "commit" -> {
+                    String[] commitArgs = argsMaker(args);
+                    cmdCommit(commitArgs);
                 }
                 default -> System.out.println("type correctly lil bro");
             }
@@ -313,23 +319,42 @@ public class Main {
         Path repo = GitRepository.repoFind(".", true);
         assert repo != null;
 
-        String activeBranch = GitStatus.branchGetActive(repo);
-        if(activeBranch == null){
+        // read the HEAD file
+        String headContent = Files.readString(repo.resolve(".gitz/HEAD"), StandardCharsets.UTF_8).trim();
+        boolean noCommitsYet = false;
+
+        if (headContent.startsWith("ref: refs/heads/")) {
+            String branchName = headContent.substring(16);
+            Path branchPath = repo.resolve(".gitz/refs/heads/" + branchName);
+
+            if (!Files.exists(branchPath)) {
+                // no commits yet because refs/heads/master does not exist
+                System.out.println("on branch " + branchName);
+                System.out.println("no commits yet\n");
+                noCommitsYet = true;
+            } else {
+                System.out.println("on branch " + branchName);
+            }
+        } else {
             System.out.println("not currently on any branch");
-            return;
-        }
-        else{
-            System.out.println("on branch "+activeBranch+"\n");
         }
 
-        if((GitUtils.refResolve(repo, Path.of(".gitz/HEAD"))) == null){
-            System.out.println("no commits yet");
-            return;
-        }
-
+        // always check the index (even if no commits exist)
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
-        GitStatus.cmdStatusHeadIndex(repo, index);
+
+        // show staged files
+        if (!noCommitsYet) {
+            GitStatus.cmdStatusHeadIndex(repo, index);
+        } else {
+            System.out.println("changes to be committed:");
+            for (GitIndexEntry entry : index.getEntries()) {
+                System.out.println("  added: " + entry.getName());
+            }
+        }
+
         System.out.println();
+
+        // show untracked files
         GitStatus.cmdStatusIndexWorktree(repo, index);
     }
 
@@ -363,6 +388,7 @@ public class Main {
 
     public static void cmdShowIndex() throws Exception {
         Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
 
         System.out.println("index file version: "+index.getVersion());
@@ -380,6 +406,7 @@ public class Main {
 
     public static void cmdDumpIndex() throws IOException {
         Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
         Path indexFile = repo.resolve(".gitz/index");
 
         if (!Files.exists(indexFile)) {
@@ -397,4 +424,34 @@ public class Main {
         System.out.println();
     }
 
+    public static void cmdCommit(String[] args) throws Exception {
+        Path repo = GitRepository.repoFind(".", true);
+        assert repo != null;
+        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+        String tree = GitRepository.treeFromIndex(repo, index);
+
+        String commit = GitUtils.commitCreate(
+                repo,
+                tree,
+                GitRepository.objectFind(repo, "HEAD", "commit", true),
+                GitUtils.gitconfigUserGet(GitUtils.gitconfigRead()),
+                OffsetDateTime.now(ZoneOffset.UTC),
+                args[1]);
+
+        String activeBranch = GitStatus.branchGetActive(repo);
+
+        if (activeBranch != null && !activeBranch.isEmpty()) {
+            // if on a branch, update refs/heads/BRANCH
+            File branchFile = GitRepository.repoPath(repo.toString(), "refs", "heads", activeBranch).toFile();
+            try (java.io.FileWriter writer = new java.io.FileWriter(branchFile)) {
+                writer.write(commit + "\n");
+            }
+        } else {
+            // otherwise, update HEAD directly
+            File headFile = GitRepository.repoPath(repo.toString(), "HEAD").toFile();
+            try (java.io.FileWriter writer = new java.io.FileWriter(headFile)) {
+                writer.write(commit + "\n");
+            }
+        }
+    }
 }

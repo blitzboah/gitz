@@ -116,8 +116,8 @@ public class GitIgnore {
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
 
         for (GitIndexEntry entry : index.getEntries()) {
-            if (entry.getName().equals(".gitignore") ||
-                    entry.getName().endsWith("/.gitignore")) {
+            if (entry.getName().equals(".gitzignore") ||
+                    entry.getName().endsWith("/.gitzignore")) {
 
                 String dirName = new File(entry.getName()).getParent();
                 if (dirName == null) {
@@ -148,24 +148,16 @@ public class GitIgnore {
     private static Boolean checkIgnoredScoped(Map<String, List<GitIgnorePattern>> rules, String path){
         String parent = new File(path).getParent();
 
-        while(true){
-            if(rules.containsKey(parent)){
+        while (parent != null) {
+            if (rules.containsKey(parent)) {
                 Boolean result = checkIgnore1(rules.get(parent), path);
-                if(result != null){
+                if (result != null) {
                     return result;
                 }
             }
 
-            if(parent.isEmpty()){
-                break;
-            }
-
             File parentFile = new File(parent);
             parent = parentFile.getParent();
-
-            if(parent == null){
-                parent = "";
-            }
         }
 
         return null;
