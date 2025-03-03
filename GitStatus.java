@@ -125,7 +125,7 @@ public class GitStatus {
         System.out.println("untracked files:");
         for(String file : allFiles){
             if(!GitIgnore.checkIgnore(ignore, file)){
-                System.out.println(" "+file);
+                System.out.println("  "+file);
             }
         }
     }

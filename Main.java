@@ -1,5 +1,6 @@
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
@@ -329,7 +330,7 @@ public class Main {
 
             if (!Files.exists(branchPath)) {
                 // no commits yet because refs/heads/master does not exist
-                System.out.println("on branch " + branchName);
+                System.out.println("on branch " + branchName + "\n");
                 System.out.println("no commits yet\n");
                 noCommitsYet = true;
             } else {
@@ -428,30 +429,41 @@ public class Main {
         Path repo = GitRepository.repoFind(".", true);
         assert repo != null;
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
+
+        // create the tree from index
         String tree = GitRepository.treeFromIndex(repo, index);
 
+        // try to find parent commit (HEAD)
+        String parentCommit = null;
+        try {
+            parentCommit = GitRepository.objectFind(repo, "HEAD", "commit", true);
+        } catch (Exception e) {
+            System.out.println("no previous commit found, creating first commit...");
+        }
+
+        // create the commit object
         String commit = GitUtils.commitCreate(
                 repo,
                 tree,
-                GitRepository.objectFind(repo, "HEAD", "commit", true),
+                parentCommit,  // will be null for first commit
                 GitUtils.gitconfigUserGet(GitUtils.gitconfigRead()),
                 OffsetDateTime.now(ZoneOffset.UTC),
-                args[1]);
+                args[1]
+        );
 
+        // ensure we are on a branch (default to 'master' if none exists)
         String activeBranch = GitStatus.branchGetActive(repo);
+        if (activeBranch == null || activeBranch.isEmpty()) {
+            System.out.println("no active branch found. setting HEAD to master");
+            activeBranch = "master";
 
-        if (activeBranch != null && !activeBranch.isEmpty()) {
-            // if on a branch, update refs/heads/BRANCH
-            File branchFile = GitRepository.repoPath(repo.toString(), "refs", "heads", activeBranch).toFile();
-            try (java.io.FileWriter writer = new java.io.FileWriter(branchFile)) {
-                writer.write(commit + "\n");
-            }
-        } else {
-            // otherwise, update HEAD directly
-            File headFile = GitRepository.repoPath(repo.toString(), "HEAD").toFile();
-            try (java.io.FileWriter writer = new java.io.FileWriter(headFile)) {
-                writer.write(commit + "\n");
-            }
+            // set HEAD to refs/heads/master
+            GitRepository.writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n");
         }
+
+        // update refs/heads/<activeBranch> with new commit hash
+        GitRepository.writeFile(new String[]{"refs", "heads", activeBranch}, commit + "\n");
+
+        System.out.println("commit successful: " + commit);
     }
 }

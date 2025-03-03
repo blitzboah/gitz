@@ -24,11 +24,11 @@ public class GitRepository {
     public static String objectFind(Path path, String name, String fmt, boolean follow) throws Exception {
         List<String> sha = objectResolve(path, name);
 
-        System.out.println("finding obj: "+name);
-        System.out.println("resolved candidates: "+sha);
+        //System.out.println("finding obj: "+name);
+        //System.out.println("resolved candidates: "+sha);
 
         if(sha.isEmpty()){
-            throw new Exception("no such reference "+name);
+            return null;
         }
 
         if(sha.size() > 1){
@@ -78,7 +78,7 @@ public class GitRepository {
 
     public static List<String> objectResolve(Path repo, String name) throws IOException {
         List<String> candidates = new ArrayList<>();
-        System.out.println("resolving reference: "+name);
+        //System.out.println("resolving reference: "+name);
         Pattern hashPattern = Pattern.compile("^[0-9A-Fa-f]{4,40}$");
 
         // empty string? abort
@@ -140,7 +140,7 @@ public class GitRepository {
             InflaterInputStream iis = new InflaterInputStream(fis);
 
             byte[] raw = iis.readAllBytes();
-            System.out.println("raw obj length: "+raw.length);
+            //System.out.println("raw obj length: "+raw.length);
 
             int x = indexOf(raw, (byte) ' ');
             if(x == -1) throw new RuntimeException("malformed object: no obj found");
@@ -148,7 +148,7 @@ public class GitRepository {
             byte[] fmtBytes = new byte[x];
             System.arraycopy(raw, 0, fmtBytes, 0, x);
             String fmt = new String(fmtBytes, StandardCharsets.US_ASCII);
-            System.out.println("obj format: "+fmt);
+            //System.out.println("obj format: "+fmt);
 
             int y = indexOf(raw, (byte) 0, x);
             if(y == -1) throw new RuntimeException("malformed object: no null char found");
@@ -158,7 +158,7 @@ public class GitRepository {
             if(size != raw.length- y - 1){
                 throw new RuntimeException("malformed object "+sha+": bad length");
             }
-            System.out.println("obj size: +"+size);
+            //System.out.println("obj size: +"+size);
 
             Class<? extends GitObject> c = null;
             switch (fmt){
@@ -172,7 +172,7 @@ public class GitRepository {
             byte[] data = new byte[size];
             System.arraycopy(raw, y+1, data, 0, size);
             assert c != null;
-            System.out.println("obj deserialized");
+            //System.out.println("obj deserialized");
             return c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
         }
         catch (Exception e){
@@ -297,20 +297,20 @@ public class GitRepository {
         return gitdir.resolve(Paths.get("", path));
     }
 
-    private Path repoFile(String[] path, boolean mkdir) throws Exception {
+    private static Path repoFile(String[] path, boolean mkdir) throws Exception {
         if(repoDir(path, mkdir) == null)
             return repoPath(path);
         return null;
     }
 
-    private Path repoDir(String[] path, boolean mkdir) throws Exception {
+    private static Path repoDir(String[] path, boolean mkdir) throws Exception {
         Path resolevedPath = repoPath(path);
 
         if(resolevedPath.toFile().exists()){
             if(resolevedPath.toFile().isDirectory())
                 return resolevedPath;
             else
-                throw new Exception("not a directory");
+                return null;
         }
 
         if (mkdir){
@@ -320,7 +320,7 @@ public class GitRepository {
         return null;
     }
 
-    private void writeFile(String[] path, String content) throws Exception {
+    static void writeFile(String[] path, String content) throws Exception {
         Path filePath = repoFile(path, false);
         File newFile = filePath.toFile();
         try (FileWriter fw = new FileWriter(newFile)){

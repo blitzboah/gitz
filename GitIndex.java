@@ -82,11 +82,11 @@ public class GitIndex extends GitObject {
         int count = buffer.getInt();
         entries = new ArrayList<>();
 
-        System.out.println("reading " + count + " entries from index file");
+        //System.out.println("reading " + count + " entries from index file");
 
         // read entries
         for (int i = 0; i < count; i++) {
-            System.out.println("reading entry " + (i+1) + " at position " + buffer.position());
+            //System.out.println("reading entry " + (i+1) + " at position " + buffer.position());
 
             // read timestamps
             long[] ctime = new long[]{buffer.getInt(), buffer.getInt()};
@@ -102,7 +102,7 @@ public class GitIndex extends GitObject {
             int modePerms = mode & 0x1FF; // extract permissions from the lower 9 bits
 
             if (modeType != 0b1000 && modeType != 0b1010 && modeType != 0b1110) {
-                System.out.println("warning: unexpected mode type " + modeType + " possibly an empty file, defaulting to regular file");
+                //System.out.println("warning: unexpected mode type " + modeType + " possibly an empty file, defaulting to regular file");
                 modeType = 0b1000;
             }
 
@@ -125,7 +125,7 @@ public class GitIndex extends GitObject {
 
             // If we encounter an extended flag, just log it but don't skip the entry
             if (flagExtended) {
-                System.out.println("entry has extended flags - but continuing to parse");
+                //System.out.println("entry has extended flags - but continuing to parse");
             }
 
             // read name
@@ -164,10 +164,10 @@ public class GitIndex extends GitObject {
                     uid, gid, fsize, sha, flagAssumeValid, flagStage, name);
             entries.add(entry);
 
-            System.out.println("added entry: " + name + " with SHA: " + sha);
+            //System.out.println("added entry: " + name + " with SHA: " + sha);
         }
 
-        System.out.println("successfully read " + entries.size() + " entries");
+        //System.out.println("successfully read " + entries.size() + " entries");
     }
 
     public static GitIndex readFromFile(File indexFile) throws Exception {
@@ -203,7 +203,7 @@ public class GitIndex extends GitObject {
             writePut(fos, index.getVersion(), 4); // version
             writePut(fos, index.getEntries().size(), 4); // number of entries
 
-            System.out.println("writing " + index.getEntries().size() + " entries to index file");
+            //System.out.println("writing " + index.getEntries().size() + " entries to index file");
 
             // write entries
             for (GitIndexEntry e : index.getEntries()) {
@@ -258,10 +258,10 @@ public class GitIndex extends GitObject {
                 int padding = (8 - (entrySize % 8)) % 8;
                 fos.write(new byte[padding]);
 
-                System.out.println("wrote entry: " + e.getName() + " with SHA: " + e.getSha());
+                //System.out.println("wrote entry: " + e.getName() + " with SHA: " + e.getSha());
             }
 
-            System.out.println("index successfully written to " + indexFilePath);
+            //System.out.println("index successfully written to " + indexFilePath);
 
         } catch (IOException e) {
             throw new RuntimeException("failed to write index file", e);
