@@ -271,12 +271,12 @@ public class GitRepository {
             System.out.println("already a gitz repo");
         }
         else {
-
             if(gitdir.toFile().mkdir()) {
                 repoDir(new String[]{"branches"}, true);
                 repoDir(new String[]{"objects"}, true);
                 repoDir(new String[]{"refs", "tags"}, true);
                 repoDir(new String[]{"refs", "heads"},true);
+                repoDir(new String[]{"info"}, true);
 
                 writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); //master as linus intended
                 writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
@@ -310,7 +310,7 @@ public class GitRepository {
             if(resolevedPath.toFile().isDirectory())
                 return resolevedPath;
             else
-                return null;
+                System.out.println("");;
         }
 
         if (mkdir){

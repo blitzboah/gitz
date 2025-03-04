@@ -1,189 +1,97 @@
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
 
 public class GitIgnore {
-    private List<List<GitIgnorePattern>> absolute;
-    private Map<String, List<GitIgnorePattern>> scoped;
+    private final List<Pattern> patterns;
 
-    public GitIgnore(List<List<GitIgnorePattern>> absolute, Map<String, List<GitIgnorePattern>> scoped) {
-        this.absolute = absolute;
-        this.scoped = scoped;
+    private GitIgnore() {
+        this.patterns = new ArrayList<>();
     }
 
-    public static class GitIgnorePattern{
-        private String pattern;
-        private boolean inclusive;
+    public static GitIgnore gitIgnoreRead(Path repo) throws IOException {
+        GitIgnore ignore = new GitIgnore();
+        Path ignoreFile = repo.resolve(".gitzignore");
 
-        public GitIgnorePattern(String pattern, boolean inclusive) {
-            this.pattern = pattern;
-            this.inclusive = inclusive;
-        }
+        if (Files.exists(ignoreFile)) {
+            List<String> lines = Files.readAllLines(ignoreFile, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                line = line.trim();
 
-        public String getPattern() {
-            return pattern;
-        }
-
-        public void setPattern(String pattern) {
-            this.pattern = pattern;
-        }
-
-        public boolean isInclusive() {
-            return inclusive;
-        }
-
-        public void setInclusive(boolean inclusive) {
-            this.inclusive = inclusive;
-        }
-    }
-
-    public static boolean checkIgnore(GitIgnore rules, String path){
-        if(Paths.get(path).isAbsolute()){
-            throw new IllegalArgumentException("path must be relative to repository root");
-        }
-
-        Boolean scopedResult = checkIgnoredScoped(rules.scoped, path);
-        if(scopedResult != null) return scopedResult;
-
-        return checkIgnoreAbsolute(rules.absolute, path);
-    }
-
-    public static GitIgnorePattern gitIgnoreParse(String raw){
-        if(raw == null){
-            return null;
-        }
-
-        raw = raw.strip();
-
-        if(raw.isEmpty() || raw.charAt(0) == '#'){
-            return null;
-        }
-        else if(raw.charAt(0) == '!'){
-            return new GitIgnorePattern(raw.substring(1), false);
-        }
-        else if(raw.charAt(0) == '\\') {
-            return new GitIgnorePattern(raw.substring(1), true);
-        }
-        else{
-            return new GitIgnorePattern(raw, true);
-        }
-    }
-
-    public static List<GitIgnorePattern> gitIgnoreParse(List<String> lines){
-        List<GitIgnorePattern> list = new ArrayList<>();
-
-        for(String line: lines){
-            GitIgnorePattern parsed = gitIgnoreParse(line);
-            if(parsed != null){
-                list.add(parsed);
-            }
-        }
-
-        return list;
-    }
-
-    public static GitIgnore gitIgnoreRead(Path repo) throws Exception {
-        List<List<GitIgnorePattern>> absolute = new ArrayList<>();
-        Map<String, List<GitIgnorePattern>> scoped = new HashMap<>();
-
-        Path repoFile = repo.resolve(".gitz/info/exclude");
-        if(Files.exists(repoFile)){
-            List<String> lines = Files.readAllLines(repoFile);
-            absolute.add(gitIgnoreParse(lines));
-        }
-
-        String configHome;
-        String xdgConfigHome = System.getenv("XDG_CONFIG_HOME");
-
-        if(xdgConfigHome != null && !xdgConfigHome.isEmpty()){
-            configHome = xdgConfigHome;
-        }
-        else{
-            configHome = System.getProperty("user.home") + "/.config";
-        }
-
-        Path globalFile = Path.of(configHome, "git/ignore");
-        if(Files.exists(globalFile)){
-            List<String> lines = Files.readAllLines(globalFile);
-            absolute.add(gitIgnoreParse(lines));
-        }
-
-        GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
-
-        for (GitIndexEntry entry : index.getEntries()) {
-            if (entry.getName().equals(".gitzignore") ||
-                    entry.getName().endsWith("/.gitzignore")) {
-
-                String dirName = new File(entry.getName()).getParent();
-                if (dirName == null) {
-                    dirName = "";
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
                 }
 
-                GitObject contents = GitRepository.objectRead(entry.getSha());
-                if (contents instanceof GitBlob) {
-                    String blobContent = new String(contents.serialize(), StandardCharsets.UTF_8);
-                    List<String> lines = Arrays.asList(blobContent.split("\n"));
-                    scoped.put(dirName, gitIgnoreParse(lines));
+                boolean negate = line.startsWith("!");
+                if (negate) {
+                    line = line.substring(1).trim();
                 }
+
+                String regex = convertToRegex(line);
+                Pattern pattern = Pattern.compile("^" + regex + "$");
+                ignore.patterns.add(pattern);
+
             }
         }
-        return new GitIgnore(absolute, scoped);
+
+        return ignore;
     }
 
-    private static Boolean checkIgnore1(List<GitIgnorePattern> rules, String path){
-        Boolean result = null;
-        for(GitIgnorePattern rule : rules){
-            if(FileSystems.getDefault().getPathMatcher("glob: "+rule.getPattern()).matches(Path.of(path))){
-                result = rule.isInclusive();
-            }
-        }
-        return result;
-    }
+    private static String convertToRegex(String pattern) {
+        StringBuilder regex = new StringBuilder();
 
-    private static Boolean checkIgnoredScoped(Map<String, List<GitIgnorePattern>> rules, String path){
-        String parent = new File(path).getParent();
-
-        while (parent != null) {
-            if (rules.containsKey(parent)) {
-                Boolean result = checkIgnore1(rules.get(parent), path);
-                if (result != null) {
-                    return result;
-                }
-            }
-
-            File parentFile = new File(parent);
-            parent = parentFile.getParent();
+        boolean isDirectoryPattern = pattern.endsWith("/");
+        if (isDirectoryPattern) {
+            pattern = pattern.substring(0, pattern.length() - 1);
         }
 
-        return null;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            switch (c) {
+                case '*':
+                    regex.append(".*");
+                    break;
+                case '?':
+                    regex.append(".");
+                    break;
+                case '.':
+                    regex.append("\\.");
+                    break;
+                case '/':
+                    regex.append("\\/");
+                    break;
+                default:
+                    regex.append(c);
+                    break;
+            }
+        }
+
+        if (isDirectoryPattern) {
+            regex.append("(\\/.*)?");
+        }
+
+        return regex.toString();
     }
 
-    private static boolean checkIgnoreAbsolute(List<List<GitIgnorePattern>> rules, String path){
-        for(List<GitIgnorePattern> rule : rules){
-            Boolean result = checkIgnore1(rule, path);
-            if(result != null) return result;
+    public static boolean checkIgnore(GitIgnore ignore, String path) {
+        if (ignore == null || ignore.patterns.isEmpty()) {
+            return false;
+        }
+        path = path.replace("\\", "/");
+
+        for (Pattern pattern : ignore.patterns) {
+            if (pattern.matcher(path).matches()) {
+                return true;
+            }
         }
         return false;
     }
 
-    public List<List<GitIgnorePattern>> getAbsolute() {
-        return absolute;
-    }
-
-    public void setAbsolute(List<List<GitIgnorePattern>> absolute) {
-        this.absolute = absolute;
-    }
-
-    public Map<String, List<GitIgnorePattern>> getScoped() {
-        return scoped;
-    }
-
-    public void setScoped(Map<String, List<GitIgnorePattern>> scoped) {
-        this.scoped = scoped;
+    public List<Pattern> getPatterns() {
+        return new ArrayList<>(patterns);
     }
 }

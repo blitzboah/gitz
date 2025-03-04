@@ -125,6 +125,9 @@ public class GitStatus {
         System.out.println("untracked files:");
         for(String file : allFiles){
             if(!GitIgnore.checkIgnore(ignore, file)){
+                if (file.startsWith(".gitz/")){
+                    continue;
+                }
                 System.out.println("  "+file);
             }
         }
