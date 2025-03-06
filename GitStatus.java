@@ -29,12 +29,12 @@ public class GitStatus {
         }
 
         for(GitTreeLeaf leaf : ((GitTree) obj).getItems()) {
-            String fullPath = prefix + "/" + leaf.getPath().toString();
-            if (new String(leaf.getMode(), StandardCharsets.UTF_8).startsWith("04")) {
+            String fullPath = leaf.getPath().getFileName().toString();
+            if(new String(leaf.getMode(), StandardCharsets.UTF_8).startsWith("04")){
                 // its a tree (directory), recurse
                 ret.putAll(treeToDict(repo, leaf.getSha(), fullPath));
-            } else {
-                // it's a file (blob)
+            }else{
+                // its a file (blob)
                 ret.put(fullPath, leaf.getSha());
             }
         }
@@ -71,64 +71,54 @@ public class GitStatus {
 
         GitIgnore ignore = GitIgnore.gitIgnoreRead(repo);
         List<String> allFiles = new ArrayList<>();
+        Map<String, GitIndexEntry> indexMap = new HashMap<>();
+        for (GitIndexEntry entry : index.getEntries()) {
+            indexMap.put(entry.getName(), entry);
+        }
 
         // traverse filesystem
         File worktree = repo.toFile();
         Queue<File> queue = new LinkedList<>();
         queue.add(worktree);
 
-        while (!queue.isEmpty()){
+        while (!queue.isEmpty()) {
             File dir = queue.poll();
             File[] files = dir.listFiles();
-            if(files == null) continue;;
+            if (files == null) continue;
 
-            for(File f: files){
-                if(f.isDirectory()){
+            for (File f : files) {
+                if (f.isDirectory()) {
                     queue.add(f);
-                }
-                else{
+                } else {
                     String relativePath = worktree.toPath().relativize(f.toPath()).toString();
                     allFiles.add(relativePath);
                 }
             }
         }
 
-        // compare index with filesystems
-
-        for(GitIndexEntry entry : index.getEntries()){
-            String filePath =   entry.getName();
+        // compare index with filesystem
+        for (GitIndexEntry entry : index.getEntries()) {
+            String filePath = entry.getName();
             File file = new File(repo.toFile(), filePath);
 
-            if(!file.exists()){
-                System.out.println("  deleted   "+filePath);
-            }
-            else{
-                long fileCtime = file.lastModified(); // no ctime in java
-                long fileMtime = file.lastModified();
+            if (!file.exists()) {
+                System.out.println("  deleted:   " + filePath);
+            } else {
+                byte[] fileContent = Files.readAllBytes(file.toPath());
+                String newSha = GitRepository.computeSHA(fileContent);
 
-                long entryCtime = entry.getCtime()[0] * 1_000_000_000L + entry.getCtime()[1];
-                long entryMtime = entry.getMtime()[0] * 1_000_000_000L + entry.getMtime()[1];
-
-                if(fileCtime != entryCtime || fileMtime != entryMtime) {
-                    byte[] fileContent = Files.readAllBytes(file.toPath());
-                    String newSha = GitRepository.computeSHA(fileContent);
-                    if (!newSha.equals(entry.getSha())) {
-                        System.out.println("  modified: " + filePath);
-                    }
+                if (!newSha.equals(entry.getSha())) {
+                    System.out.println("  modified: " + filePath);
                 }
             }
-
             allFiles.remove(filePath);
         }
 
         System.out.println();
         System.out.println("untracked files:");
-        for(String file : allFiles){
-            if(!GitIgnore.checkIgnore(ignore, file)){
-                if (file.startsWith(".gitz/")){
-                    continue;
-                }
-                System.out.println("  "+file);
+        for (String file : allFiles) {
+            if (!GitIgnore.checkIgnore(ignore, file) && !file.startsWith(".gitz/")) {
+                System.out.println("  " + file);
             }
         }
     }

@@ -106,7 +106,7 @@ public class GitRepository {
                     for(File f: files){
                         String fileName = f.getName();
                         if(fileName.startsWith(rem)){
-                            System.out.println("match found");
+                            //System.out.println("match found");
                             candidates.add(prefix + fileName);
                         }
                     }
@@ -124,7 +124,7 @@ public class GitRepository {
             candidates.add(asBranch);
         }
 
-        System.out.println("resolved candidates returned from objRes: "+candidates);
+        //System.out.println("resolved candidates returned from objRes: "+candidates);
         return candidates;
     }
 
@@ -169,11 +169,16 @@ public class GitRepository {
                 default -> System.out.println("idk man");
             }
 
-            byte[] data = new byte[size];
-            System.arraycopy(raw, y+1, data, 0, size);
+            byte[] data = Arrays.copyOfRange(raw, y+1, raw.length);
             assert c != null;
             //System.out.println("obj deserialized");
-            return c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
+            GitObject obj = c.getDeclaredConstructor(byte[].class).newInstance((Object) data);
+
+            if (obj instanceof GitCommit) {
+                ((GitCommit) obj).deserialize(data);
+            }
+
+            return obj;
         }
         catch (Exception e){
             e.getMessage();
@@ -277,6 +282,7 @@ public class GitRepository {
                 repoDir(new String[]{"refs", "tags"}, true);
                 repoDir(new String[]{"refs", "heads"},true);
                 repoDir(new String[]{"info"}, true);
+                repoDir(new String[]{"img"}, true);
 
                 writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); //master as linus intended
                 writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
@@ -368,11 +374,13 @@ public class GitRepository {
         // make paths absolute
         Set<Path> absPaths = new HashSet<>();
         for (Path path : paths) {
-            Path absPath = path.toAbsolutePath();
-            if (absPath.startsWith(repo)) {
+            Path absPath = path.toAbsolutePath().normalize();
+            Path repoPath = repo.toAbsolutePath().normalize();
+
+            if (absPath.startsWith(repoPath)) {
                 absPaths.add(absPath);
             } else {
-                throw new RuntimeException("cannot remove paths outside of worktree: " + path);
+                throw new RuntimeException("cannot remove paths outside of worktree: " + absPath);
             }
         }
 
@@ -383,7 +391,7 @@ public class GitRepository {
 
         // preserve the others in keptEntries
         for (GitIndexEntry e : index.getEntries()) {
-            Path fullPath = repo.resolve(e.getName());
+            Path fullPath = repo.resolve(e.getName()).toAbsolutePath().normalize();
 
             if (absPaths.contains(fullPath)) {
                 remove.add(fullPath);
@@ -428,13 +436,13 @@ public class GitRepository {
         for (Path path : paths) {
             Path absPath = path.toAbsolutePath();
             if (!absPath.startsWith(worktree.get()) || !Files.isRegularFile(absPath)) {
-                throw new RuntimeException("Not a file or outside the worktree: " + path);
+                throw new RuntimeException("not a file or outside the worktree: " + path);
             }
 
             byte[] fileContent = Files.readAllBytes(absPath);
             GitBlob blob = new GitBlob(fileContent);
             String sha = objectWrite(blob);
-            System.out.println("Generated hash for " + path + ": " + sha);
+            //System.out.println("generated hash for " + path + ": " + sha);
 
             BasicFileAttributes attrs = Files.readAttributes(absPath, BasicFileAttributes.class);
 

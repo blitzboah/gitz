@@ -7,6 +7,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalLookupService;
@@ -144,7 +145,7 @@ public class Main {
         GitObject object = GitRepository.objectRead(sha);
 
         if(object != null){
-            System.out.println(Arrays.toString(object.serialize()));
+            System.out.println(new String(object.serialize(), StandardCharsets.UTF_8));
         }
         else {
             System.out.println("object not found");
@@ -181,15 +182,27 @@ public class Main {
         String objSha = GitRepository.objectFind(repo, commitHash, null, false);
         GitObject obj = GitRepository.objectRead(objSha);
 
-        if(!(obj instanceof GitCommit)){
+        if (obj instanceof GitCommit) {
             GitCommit commit = (GitCommit) obj;
 
-            byte[] treeHash = commit.getKvlm().get("tree".getBytes(StandardCharsets.UTF_8));
-            if(treeHash == null){
-                throw new Exception("commit has not tree");
+            // extract the tree hash from the commit's kvlm
+            byte[] treeHash = null;
+            for (Map.Entry<byte[], byte[]> entry : commit.getKvlm().entrySet()) {
+                String key = entry.getKey() != null ? new String(entry.getKey(), StandardCharsets.UTF_8) : "message";
+                if ("tree".equals(key)) {
+                    treeHash = entry.getValue();
+                }
+            }
+
+            if (treeHash == null) {
+                throw new Exception("commit has no tree.");
             }
 
             obj = GitRepository.objectRead(new String(treeHash, StandardCharsets.UTF_8));
+        }
+
+        if (!(obj instanceof GitTree)) {
+            throw new Exception("checkout failed: expected a tree but got " + obj.getClass().getSimpleName());
         }
 
         File targetDir = new File(targetPath);
@@ -227,21 +240,30 @@ public class Main {
         GitUtils.showRef(repo, refs, true, "refs");
     }
 
-    public static void cmdTag(String[] args) throws IOException {
+    public static void cmdTag(String[] args) throws Exception {
         Path repo = GitRepository.repoFind(".", true);
 
-        if(args[1] != null){
-            String name = args[1];
-            String object = args.length > 2 ? args[2] : "HEAD";
-            boolean createTagObject = args.length > 3 && args[3].equals("-a");
+        if (args.length > 0) {
+            String tagName = args[0];
+            String targetCommit = args.length > 1 ? args[1] : "HEAD";
+            boolean annotated = args.length > 2 && args[2].equals("-a");
 
+            String commitHash = GitRepository.objectFind(repo, targetCommit, "commit", true);
+            if (commitHash == null) {
+                System.out.println("commit not found.");
+                return;
+            }
 
-        }
-        else {
+            Path tagPath = repo.resolve(".gitz/refs/tags/" + tagName);
+            Files.writeString(tagPath, commitHash);
+
+            System.out.println("tag " + tagName + " created for commit " + commitHash);
+        } else {
             Map<String, Object> refs = GitUtils.refList(repo, repo.resolve(".gitz/refs/tags"));
             GitUtils.showRef(repo, refs, false, "tags");
         }
     }
+
 
     public static void cmdRevParse(String[] args) throws Exception {
         String name = args[0];
@@ -363,7 +385,10 @@ public class Main {
         Path repo = GitRepository.repoFind(".", true);
         List<Path> paths = new ArrayList<>();
         for (String arg : args) {
-            paths.add(Paths.get(arg));
+            assert repo != null;
+            Path filePath = repo.resolve(arg).normalize();
+            System.out.println("removing: "+filePath);
+            paths.add(filePath);
         }
         assert repo != null;
         GitRepository.rm(repo, paths, true, false);
@@ -430,10 +455,8 @@ public class Main {
         assert repo != null;
         GitIndex index = GitIndex.readFromFile(repo.resolve(".gitz/index").toFile());
 
-        // create the tree from index
         String tree = GitRepository.treeFromIndex(repo, index);
 
-        // try to find parent commit (HEAD)
         String parentCommit = null;
         try {
             parentCommit = GitRepository.objectFind(repo, "HEAD", "commit", true);
@@ -441,28 +464,68 @@ public class Main {
             System.out.println("no previous commit found, creating first commit...");
         }
 
-        // create the commit object
+        String message = args[1];
+        String imagePath = null;
+
+        for (int i = 2; i < args.length; i++) {
+            if (args[i].equals("-i") && i + 1 < args.length) {
+                imagePath = args[i + 1];
+                i++;
+            }
+        }
+
+        if (imagePath == null) {
+            imagePath = repo.resolve(".gitz/img/def.jpg").toString();
+        }
+
+        String storedImagePath = GitUtils.processCommitImage(imagePath, message, repo);
+
         String commit = GitUtils.commitCreate(
-                repo,
-                tree,
-                parentCommit,  // will be null for first commit
+                repo, tree, parentCommit,
                 GitUtils.gitconfigUserGet(GitUtils.gitconfigRead()),
-                OffsetDateTime.now(ZoneOffset.UTC),
-                args[1]
+                OffsetDateTime.now(ZoneOffset.UTC), args[1]
         );
 
-        // ensure we are on a branch (default to 'master' if none exists)
+        if (storedImagePath != null) {
+            GitRepository.writeFile(new String[]{"img", commit}, storedImagePath);
+        }
+
+        // ensure we are on a branch
         String activeBranch = GitStatus.branchGetActive(repo);
         if (activeBranch == null || activeBranch.isEmpty()) {
             System.out.println("no active branch found. setting HEAD to master");
             activeBranch = "master";
-
-            // set HEAD to refs/heads/master
             GitRepository.writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n");
         }
 
-        // update refs/heads/<activeBranch> with new commit hash
+        // update branch with new commit hash
         GitRepository.writeFile(new String[]{"refs", "heads", activeBranch}, commit + "\n");
+
+        GitObject treeObj = GitRepository.objectRead(tree);
+        if (!(treeObj instanceof GitTree)) {
+            throw new Exception("Expected a tree object for commit");
+        }
+        List<GitIndexEntry> newEntries = new ArrayList<>();
+        for (GitTreeLeaf leaf : ((GitTree) treeObj).getItems()) {
+            if (!new String(leaf.getMode(), StandardCharsets.UTF_8).startsWith("04")) { // Skip directories
+                Path filePath = repo.resolve(leaf.getPath().toString());
+                BasicFileAttributes attrs = Files.readAttributes(filePath, BasicFileAttributes.class);
+                int modeType = Files.isSymbolicLink(filePath) ? 0b1010 : 0b1000;
+                int modePerms = Files.isExecutable(filePath) ? 0755 : 0644;
+                newEntries.add(new GitIndexEntry(
+                        new long[]{attrs.creationTime().toMillis() / 1000, 0},
+                        new long[]{attrs.lastModifiedTime().toMillis() / 1000, 0},
+                        0, 0, // dev, inode
+                        modeType, modePerms,
+                        0, 0, // uid, gid
+                        attrs.size(),
+                        leaf.getSha(), false, 0,
+                        leaf.getPath().toString()
+                ));
+            }
+        }
+        index.setEntries(newEntries);
+        GitIndex.indexWrite(repo, index);
 
         System.out.println("commit successful: " + commit);
     }

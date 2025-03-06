@@ -132,7 +132,7 @@ public class GitUtils {
 
     public static Map<String, Object> refList(Path repo, Path path) throws IOException {
         if(path == null){
-            path = repo.resolve("refs");
+            path = repo.resolve(".gitz/refs");
         }
 
         Map<String, Object> ret = new TreeMap<>(); // using treemap to maintain order unlike hashmap can't maintain order type shi
@@ -202,6 +202,39 @@ public class GitUtils {
 
         byte[] commitData = kvlmSerialize(kvlm);
         return GitRepository.objectWrite(new GitCommit(commitData));
+    }
+
+    public static String processCommitImage(String imagePath, String message, Path repo){
+        Path commitImageDir = repo.resolve(".gitz/img");
+
+        String fileName = Paths.get(imagePath).getFileName().toString();
+        Path outputImagePath = commitImageDir.resolve("commit"+System.currentTimeMillis()+"_"+fileName);
+
+        int fontSize = 40;  // Big text for readability
+        int boxHeight = fontSize + 20;  // Enough space for text
+
+        // **Simply draw a black box at the bottom**
+        String drawboxFilter = "drawbox=x=0:y=ih-" + boxHeight + ":w=iw:h=" + boxHeight + ":color=black@0.6:t=fill";
+
+        // **Place text inside the black box**
+        String drawtextFilter = "drawtext=text='" + message + "':fontcolor=white:fontsize=" + fontSize +
+                ":x=(w-text_w)/2:y=h-" + (boxHeight - 10) + ":shadowcolor=black:shadowx=3:shadowy=3";
+
+        // FFmpeg command
+        ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-i", imagePath, "-vf", drawboxFilter + "," + drawtextFilter, outputImagePath.toString()
+        );;
+
+        try {
+            Process process = pb.start();
+            process.waitFor();
+        }
+        catch (Exception e){
+            System.out.println("error processing image: "+e.getMessage());
+            return null;
+        }
+
+        return outputImagePath.toString();
     }
 
     public static Properties gitconfigRead() throws IOException {
