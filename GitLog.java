@@ -59,10 +59,16 @@ public class GitLog {
         }
 
         assert repo != null;
-        Path imagePath = repo.resolve(".gitz/img").resolve("commit"+sha+".jpg");
-        if(Files.exists(imagePath)){
-            System.out.println(imagePath);
+        Path imagePath = repo.resolve(".gitz/img").resolve("commit" + sha + ".png");
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder("chafa", imagePath.toString());
+            pb.inheritIO();
+            pb.start().waitFor();
+        } catch (Exception e) {
+            System.out.println("error displaying image: " + e.getMessage());
         }
+
 
         System.out.println();
 
