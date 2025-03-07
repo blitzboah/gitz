@@ -551,7 +551,7 @@ public class Main {
         }
 
         if (imagePath == null) {
-            imagePath = repo.resolve(".gitz/img/def.jpg").toString();
+            imagePath = repo.resolve(".gitz/img/def.png").toString();
         }
 
         String commit = GitUtils.commitCreate(
@@ -561,10 +561,6 @@ public class Main {
         );
 
         String storedImagePath = GitUtils.processCommitImage(imagePath, message, commit, repo);
-
-        if (storedImagePath != null) {
-            GitRepository.writeFile(new String[]{"img"}, storedImagePath);
-        }
 
         String activeBranch = GitStatus.branchGetActive(repo);
         if (activeBranch == null || activeBranch.isEmpty()) {

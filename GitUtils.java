@@ -204,13 +204,13 @@ public class GitUtils {
         return GitRepository.objectWrite(new GitCommit(commitData));
     }
 
-    public static String processCommitImage(String imagePath, String message, String commit,  Path repo){
+    public static String processCommitImage(String imagePath, String message, String commit, Path repo) {
         Path commitImageDir = repo.resolve(".gitz/img");
 
-        Path outputImagePath = commitImageDir.resolve("commit"+commit+".jpg");
+        Path outputImagePath = commitImageDir.resolve("commit" + commit + ".png");
 
         int fontSize = 40;
-        int boxHeight = fontSize + 20; // Enough space for text
+        int boxHeight = fontSize + 20;
 
         String drawboxFilter = "drawbox=x=0:y=ih-" + boxHeight + ":w=iw:h=" + boxHeight + ":color=black@0.6:t=fill";
 
@@ -218,20 +218,20 @@ public class GitUtils {
                 ":x=(w-text_w)/2:y=h-" + (boxHeight - 10) + ":shadowcolor=black:shadowx=3:shadowy=3";
 
         ProcessBuilder pb = new ProcessBuilder(
-                "ffmpeg", "-i", imagePath, "-vf", drawboxFilter + "," + drawtextFilter, outputImagePath.toString()
-        );;
+                "ffmpeg", "-i", imagePath, "-vf", drawboxFilter + "," + drawtextFilter, "-y", outputImagePath.toString()
+        );
 
         try {
             Process process = pb.start();
             process.waitFor();
-        }
-        catch (Exception e){
-            System.out.println("error processing image: "+e.getMessage());
+        } catch (Exception e) {
+            System.out.println("error processing image: " + e.getMessage());
             return null;
         }
 
         return outputImagePath.toString();
     }
+
 
     public static Properties gitconfigRead() throws IOException {
         String xdgConfigHome = System.getenv("XDG_CONFIG_HOME");
