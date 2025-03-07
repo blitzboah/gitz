@@ -45,7 +45,7 @@ to create a new gitz repository, run:
 gitz init
 ```
 
-this will create a `.gitz` directory with necessary subdirectories and configuration files. it will also copy `def.jpg` into `.gitz/img/`.
+this will create a `.gitz` directory with necessary subdirectories and configuration files. it will also copy `def.png` into `.gitz/img/`.
 
 ## available commands
 
