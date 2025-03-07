@@ -92,3 +92,5 @@ echo "hello world" > file.txt
 gitz add file.txt
 gitz commit -m "init"
 ```
+
+i refered this book - https://wyag.thb.lt/
