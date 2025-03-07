@@ -1,5 +1,11 @@
 # gitz
 
+## prerequisites
+
+before installation, make sure you have the following dependencies installed:
+* java - required to compile and run gitz
+* chafa - used for image rendering in the terminal
+
 ## installation
 
 to install `gitz` and make it executable globally, follow these steps:
@@ -9,7 +15,7 @@ to install `gitz` and make it executable globally, follow these steps:
 **step 1: compile and package**
 ```sh
 javac *.java
-jar cfm gitz.jar MANIFEST.MF *.class def.jpg
+jar cfm gitz.jar MANIFEST.MF *.class def.png
 ```
 
 **step 2: move to a global path**
@@ -70,7 +76,7 @@ this will create a `.gitz` directory with necessary subdirectories and configura
 * `gitz rm <file>` → removes a file from tracking
 
 ### committing changes
-* `gitz commit -m <message>` → creates a commit with an defautlt blackbeard image hehe
+* `gitz commit -m <message>` → creates a commit with a default blackbeard image hehe
 * `gitz commit -m <message> -i <image_path>` → creates a commit with an image
 
 ### debugging and index inspection
