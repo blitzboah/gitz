@@ -288,9 +288,9 @@ public class GitRepository {
             writeFile(new String[]{"info", "exclude"}, "");
 
             Path imgDir = gitdir.resolve("img");
-            Path targetImage = imgDir.resolve("def.jpg");
+            Path targetImage = imgDir.resolve("def.png");
 
-            try (var inputStream = getClass().getClassLoader().getResourceAsStream("def.jpg")) {
+            try (var inputStream = getClass().getClassLoader().getResourceAsStream("def.png")) {
                 if (inputStream != null) {
                     Files.copy(inputStream, targetImage);
                     //System.out.println("default image copied to: " + targetImage);
