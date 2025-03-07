@@ -86,12 +86,3 @@ echo "hello world" > file.txt
 gitz add file.txt
 gitz commit -m "init"
 ```
-
-gitz prevents common mistakes by:
-* preventing commits if no files have been added
-* ensuring valid commit hashes before checkout
-* verifying that files exist before adding or removing them
-* requiring commit messages for `gitz commit`
-* checking if a repository exists before running commands
-
-this ensures a more user-friendly experience and avoids unexpected crashes.
