@@ -106,7 +106,6 @@ public class GitRepository {
                     for(File f: files){
                         String fileName = f.getName();
                         if(fileName.startsWith(rem)){
-                            //System.out.println("match found");
                             candidates.add(prefix + fileName);
                         }
                     }
@@ -246,17 +245,15 @@ public class GitRepository {
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         byte[] hashBytes = digest.digest(data);
         StringBuilder hexString = new StringBuilder();
-
-        for (byte b: hashBytes){
+        for (byte b : hashBytes) {
             String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1){
-                hexString.append('0');
-            }
+            if (hex.length() == 1) hexString.append('0');
             hexString.append(hex);
         }
-
         return hexString.toString();
     }
+
+
 
     private static int indexOf(byte[] array, byte target) {
         return indexOf(array, target, 0);
@@ -272,29 +269,41 @@ public class GitRepository {
     }
 
     public void gitInit() throws Exception {
-        if(gitdir.toFile().exists()) {
+        if (gitdir.toFile().exists()) {
             System.out.println("already a gitz repo");
+            return;
         }
-        else {
-            if(gitdir.toFile().mkdir()) {
-                repoDir(new String[]{"branches"}, true);
-                repoDir(new String[]{"objects"}, true);
-                repoDir(new String[]{"refs", "tags"}, true);
-                repoDir(new String[]{"refs", "heads"},true);
-                repoDir(new String[]{"info"}, true);
-                repoDir(new String[]{"img"}, true);
 
-                writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); //master as linus intended
-                writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
-                writeFile(new String[]{"config"}, repoDefaultConfig().toString());
-                writeFile(new String[]{"info", "exclude"}, "");
+        if (gitdir.toFile().mkdir()) {
+            repoDir(new String[]{"branches"}, true);
+            repoDir(new String[]{"objects"}, true);
+            repoDir(new String[]{"refs", "tags"}, true);
+            repoDir(new String[]{"refs", "heads"}, true);
+            repoDir(new String[]{"info"}, true);
+            repoDir(new String[]{"img"}, true);
 
-                System.out.println("gitz repo initialized");
+            writeFile(new String[]{"HEAD"}, "ref: refs/heads/master\n"); // master as linus intended
+            writeFile(new String[]{"description"}, "unnamed repo, edit this file to name repo.\n");
+            writeFile(new String[]{"config"}, repoDefaultConfig().toString());
+            writeFile(new String[]{"info", "exclude"}, "");
+
+            Path imgDir = gitdir.resolve("img");
+            Path targetImage = imgDir.resolve("def.jpg");
+
+            try (var inputStream = getClass().getClassLoader().getResourceAsStream("def.jpg")) {
+                if (inputStream != null) {
+                    Files.copy(inputStream, targetImage);
+                    //System.out.println("default image copied to: " + targetImage);
+                } else {
+                    System.out.println("error: default image not found inside JAR.");
+                }
+            } catch (IOException e) {
+                System.out.println("failed to copy default image: " + e.getMessage());
             }
 
-            else {
-                System.out.println("failed to init gitz repo");
-            }
+            System.out.println("gitz repo initialized");
+        } else {
+            System.out.println("failed to init gitz repo");
         }
     }
 
@@ -442,7 +451,7 @@ public class GitRepository {
             byte[] fileContent = Files.readAllBytes(absPath);
             GitBlob blob = new GitBlob(fileContent);
             String sha = objectWrite(blob);
-            //System.out.println("generated hash for " + path + ": " + sha);
+            System.out.println("generated hash for " + path + ": " + sha);
 
             BasicFileAttributes attrs = Files.readAttributes(absPath, BasicFileAttributes.class);
 
@@ -478,84 +487,46 @@ public class GitRepository {
     }
 
     public static String treeFromIndex(Path repo, GitIndex index) throws Exception {
-        // map to store directories and their contents
         Map<String, List<Object>> contents = new HashMap<>();
         contents.put("", new ArrayList<>());
 
-        // enumerate entries and organize them by directory
         for (GitIndexEntry entry : index.getEntries()) {
             String dirname = new File(entry.getName()).getParent();
             if (dirname == null) dirname = "";
 
-            // create dictionary entries up to root
-            String key = dirname;
-            while (!key.isEmpty()) {
-                if (!contents.containsKey(key)) {
-                    contents.put(key, new ArrayList<>());
-                }
-                // get parent directory
-                File keyFile = new File(key);
-                key = keyFile.getParent() != null ? keyFile.getParent() : "";
-            }
-
-            // store the entry in the list
+            contents.computeIfAbsent(dirname, k -> new ArrayList<>());
             contents.get(dirname).add(entry);
         }
 
-        // sort directories by length in descending order
         List<String> sortedPaths = new ArrayList<>(contents.keySet());
-        sortedPaths.sort((a, b) -> Integer.compare(b.length(), a.length()));
+        sortedPaths.sort(Comparator.comparingInt(String::length).reversed());
 
-        // variable to store the current tree's SHA-1
-        String sha = null;
+        String lastTreeSha = null;
 
-        // process directories from deepest to shallowest
         for (String path : sortedPaths) {
-            // prepare a new empty tree object
             GitTree tree = new GitTree();
             tree.init();
 
-            // add each entry to the new tree
-            for (Object entry : contents.get(path)) {
-                if (entry instanceof GitIndexEntry) {
-                    // regular file entry
-                    GitIndexEntry indexEntry = (GitIndexEntry) entry;
-
-                    // format mode: combine type and permissions
-                    String modeStr = String.format("%02o%04o", indexEntry.getModeType(), indexEntry.getModePerms());
+            for (Object obj : contents.get(path)) {
+                if (obj instanceof GitIndexEntry entry) {
+                    String modeStr = String.format("%02o%04o", entry.getModeType(), entry.getModePerms());
                     byte[] modeBytes = modeStr.getBytes(StandardCharsets.US_ASCII);
+                    String baseName = new File(entry.getName()).getName();
 
-                    // get the basename of the file
-                    String baseName = new File(indexEntry.getName()).getName();
-
-                    // create tree leaf
-                    GitTreeLeaf leaf = new GitTreeLeaf(modeBytes, Path.of(baseName), indexEntry.getSha());
+                    GitTreeLeaf leaf = new GitTreeLeaf(modeBytes, Path.of(baseName), entry.getSha());
                     tree.getItems().add(leaf);
                 } else {
-                    // tree entry
-                    Object[] treeEntry = (Object[]) entry;
+                    Object[] treeEntry = (Object[]) obj;
                     String baseName = (String) treeEntry[0];
                     String treeSha = (String) treeEntry[1];
-
-                    // create tree leaf with directory mode (040000)
-                    GitTreeLeaf leaf = new GitTreeLeaf("040000".getBytes(StandardCharsets.US_ASCII),
-                            Path.of(baseName), treeSha);
+                    GitTreeLeaf leaf = new GitTreeLeaf("040000".getBytes(StandardCharsets.US_ASCII), Path.of(baseName), treeSha);
                     tree.getItems().add(leaf);
                 }
             }
 
-            // write the new tree object to the store
-            sha = GitRepository.objectWrite(tree);
-
-            // Add the new tree hash to the parent directory's content list
-            String parent = new File(path).getParent();
-            if (parent == null) parent = "";
-            String base = new File(path).getName();
-
-            // store as object[] {basename, SHA} to distinguish from GitIndexEntry
-            contents.get(parent).add(new Object[] {base, sha});
+            lastTreeSha = GitRepository.objectWrite(tree);
         }
 
-        return sha;
+        return lastTreeSha;
     }
 }

@@ -3,7 +3,7 @@ import java.util.Map;
 
 public class GitCommit extends GitObject{
 
-    private Map<byte[], byte[]> data;
+    protected Map<byte[], byte[]> data;
 
     public GitCommit(){
         super();

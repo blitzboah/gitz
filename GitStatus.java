@@ -24,17 +24,19 @@ public class GitStatus {
         String treeSha = GitRepository.objectFind(repo, ref, "tree", true);
         GitObject obj = GitRepository.objectRead(treeSha);
 
-        if(!(obj instanceof GitTree)){
+        if (!(obj instanceof GitTree)) {
             throw new Exception("expected a tree object");
         }
 
-        for(GitTreeLeaf leaf : ((GitTree) obj).getItems()) {
-            String fullPath = leaf.getPath().getFileName().toString();
-            if(new String(leaf.getMode(), StandardCharsets.UTF_8).startsWith("04")){
-                // its a tree (directory), recurse
+        for (GitTreeLeaf leaf : ((GitTree) obj).getItems()) {
+            String name = leaf.getPath().getFileName().toString();
+            String fullPath = prefix.isEmpty() ? name : prefix + "/" + name;
+
+            if (new String(leaf.getMode(), StandardCharsets.UTF_8).startsWith("04")) {
+                // recurse into the directory with the new prefix
                 ret.putAll(treeToDict(repo, leaf.getSha(), fullPath));
-            }else{
-                // its a file (blob)
+            } else {
+                // add the file with the full path
                 ret.put(fullPath, leaf.getSha());
             }
         }
@@ -43,28 +45,29 @@ public class GitStatus {
     }
 
     public static void cmdStatusHeadIndex(Path repo, GitIndex index) throws Exception {
-        System.out.println("changes to commited:");
+        System.out.println("changes to be committed:");
         Map<String, String> head = treeToDict(repo, "HEAD", "");
 
-        for(GitIndexEntry entry: index.getEntries()) {
+        for (GitIndexEntry entry : index.getEntries()) {
             String fileName = entry.getName();
-
             if (head.containsKey(fileName)) {
                 if (!head.get(fileName).equals(entry.getSha())) {
-                    System.out.println("  modified " + fileName);
+                    System.out.println("  modified: " + fileName);
+                } else {
+                    System.out.println("  no changes: " + fileName);
                 }
-                head.remove(fileName); // file is already tracked, remove from HEAD
-            }
-            else{
-                System.out.println("  added:   "+fileName);
+                head.remove(fileName); // remove the file from the HEAD map after processing
+            } else {
+                System.out.println("  added: " + fileName);
             }
         }
 
-        // remaining files in HEAD are deleted
-        for(String deletedFile : head.keySet()){
-            System.out.println("  deleted:  "+deletedFile);
+        // any remaining files in the HEAD map were deleted
+        for (String deletedFile : head.keySet()) {
+            System.out.println("  deleted: " + deletedFile);
         }
     }
+
 
     public static void cmdStatusIndexWorktree(Path repo, GitIndex index) throws Exception {
         System.out.println("changes not staged for commit:");
@@ -105,10 +108,16 @@ public class GitStatus {
                 System.out.println("  deleted:   " + filePath);
             } else {
                 byte[] fileContent = Files.readAllBytes(file.toPath());
-                String newSha = GitRepository.computeSHA(fileContent);
-
+                String header = "blob " + fileContent.length + "\0";
+                byte[] headerBytes = header.getBytes(StandardCharsets.US_ASCII);
+                byte[] result = new byte[headerBytes.length + fileContent.length];
+                System.arraycopy(headerBytes, 0, result, 0, headerBytes.length);
+                System.arraycopy(fileContent, 0, result, headerBytes.length, fileContent.length);
+                String newSha = GitRepository.computeSHA(result);
                 if (!newSha.equals(entry.getSha())) {
                     System.out.println("  modified: " + filePath);
+                } else {
+                    System.out.println("  no changes: " + filePath);
                 }
             }
             allFiles.remove(filePath);

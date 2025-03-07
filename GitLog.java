@@ -30,6 +30,8 @@ public class GitLog {
     }
 
     private static void printLog(String sha, Set<String> seen){
+        Path repo = GitRepository.repoFind(".", true);
+
         if(seen.contains(sha)){
             return;
         }
@@ -55,6 +57,13 @@ public class GitLog {
         if(msg != null){
             System.out.println("\n   " + new String(msg, StandardCharsets.UTF_8));
         }
+
+        assert repo != null;
+        Path imagePath = repo.resolve(".gitz/img").resolve("commit"+sha+".jpg");
+        if(Files.exists(imagePath)){
+            System.out.println(imagePath);
+        }
+
         System.out.println();
 
         //handle parents
